@@ -1,0 +1,18 @@
+name: "Wee 8-5-3-1 (down)"
+scale_degrees: [8, 5, 3, 1]
+syllable: "Wee"
+# Waypoints: path = D4 → … → G3 → … → Bb4 → … → F3 (semitones between each pair)
+modulation_waypoints: ["D4", "G3", "Bb4", "F3"]
+bpm: 70
+note_value: 8th
+pause_between_keys_ms: 2000
+
+feedback:
+  - key: "D4"
+    which_occurrence: 1
+    text: |
+      Don't push so much, open a little more but not much. Lower intensity.
+      To get the ees you need to do 3 things: drop the jaw a bit, keep the tongue in the right position feel the yawny space come in and not so loud!
+  - key: "Db4"
+    which_occurrence: 1
+    text: "Still lower the intensity a bit."
