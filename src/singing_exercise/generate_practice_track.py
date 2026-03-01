@@ -1,5 +1,5 @@
 """
-Generate a practice track from an exercise YAML: MIDI per segment, render to WAV, concatenate.
+Generate a practice track from an exercise YAML: MIDI per modulation, render to WAV, concatenate.
 Phase 3: optional spoken feedback (TTS) at key/occurrence positions.
 Requires: mido, pydub, fluidsynth CLI, and a piano soundfont (.sf2).
 """
@@ -11,44 +11,44 @@ import tempfile
 from pathlib import Path
 
 from .config import load_config
-from .render_wav import render_segments_to_wav, render_sequence_to_wav
-from .render_midi import segment_to_midi_bytes
+from .gather_audio_clips import gather_audio_clips
+from .render_wav import concatenate_wavs
+from .render_midi import modulation_to_midi_bytes
 from .raw_exercise import RawExercise
-from .process_exercise import expand_exercise_to_segments, feedback_after_segment
-from . import generate_voice
+from .process_exercise import expand_exercise_to_modulations, feedback_after_modulation
 from .record_demo import record_demo
 
 logger = logging.getLogger(__name__)
 
 
-def _build_sequence(exercise: RawExercise, segments: list, segments_midi: list) -> list:
+def _build_sequence(exercise: RawExercise, modulations: list, modulations_midi: list) -> list:
     """
     Build ordered list of segment descriptors: TTS (feedback) before each key, then piano, then silence.
     """
-    feedback_by_segment = feedback_after_segment(segments, exercise.feedback)
+    feedback_by_modulation = feedback_after_modulation(modulations, exercise.feedback)
     sequence = []
-    for i, midi_bytes in enumerate(segments_midi):
-        for text in feedback_by_segment[i]:
+    for i, midi_bytes in enumerate(modulations_midi):
+        for text in feedback_by_modulation[i]:
             sequence.append({"type": "tts", "text": text})
         sequence.append({"type": "piano", "midi": midi_bytes})
-        if i < len(segments_midi) - 1:
+        if i < len(modulations_midi) - 1:
             sequence.append({"type": "silence", "ms": exercise.pause_between_keys_ms})
     return sequence
 
 
 def _exercise_to_sequence(exercise: RawExercise) -> list:
-    """Build the full segment sequence (piano + pauses + optional TTS) for one exercise."""
-    segments = expand_exercise_to_segments(exercise)
-    if not segments:
+    """Build the full sequence (piano + pauses + optional TTS) for one exercise."""
+    modulations = expand_exercise_to_modulations(exercise)
+    if not modulations:
         return []
-    segments_midi = [
-        segment_to_midi_bytes(seg["midi_notes"], seg["durations_sec"], exercise.bpm)
-        for seg in segments
+    modulations_midi = [
+        modulation_to_midi_bytes(mod["midi_notes"], mod["durations_sec"], exercise.bpm)
+        for mod in modulations
     ]
-    return _build_sequence(exercise, segments, segments_midi)
+    return _build_sequence(exercise, modulations, modulations_midi)
 
 
-def generate_wav(
+def generate_practice_track(
     yaml_path: Path,
     output_path: Path,
     soundfont_path: Path,
@@ -71,35 +71,33 @@ def generate_wav(
 
     exercises, pause_between_exercises_ms = RawExercise.load_all_from_yaml_path(yaml_path)
     if not exercises:
-        logger.warning("No exercises in YAML; output will be empty.")
-        output_path.parent.mkdir(parents=True, exist_ok=True)
-        from .render_wav import silence_wav
-        silence_wav(1, sample_rate).export(str(output_path), format="wav")
-        logger.info("Wrote empty %s", output_path)
-        return
+        raise ValueError(f"No exercises in YAML: {yaml_path}")
 
-    # Build one combined sequence: [ex1 segments..., silence, ex2 segments..., silence, ...]
+    # Build one combined sequence: [ex1 modulations..., silence, ex2 modulations..., silence, ...]
     # For exercises with demo=True, record a voice demo first and prepend it (with a short silence).
-    # Use a temp dir for demo WAVs so they persist until we finish rendering.
-    with tempfile.TemporaryDirectory() as demo_tmp:
-        demo_dir = Path(demo_tmp)
+    # Use a temp dir for all clip WAVs (demos + rendered segments) until we finish rendering.
+    with tempfile.TemporaryDirectory() as clip_tmp:
+        clip_dir = Path(clip_tmp)
+        # full_sequence is the fully expanded processed exercise sequence, that includes
+        # the step by steps of what to generate
         full_sequence = []
         for i, exercise in enumerate(exercises):
             if exercise.demo:
-                demo_path = demo_dir / f"demo_{i}.wav"
+                demo_path = clip_dir / f"demo_{i}.wav"
+                # recording all the demos before other audio is generated, so that we front-load any required user input
                 record_demo(exercise.name, demo_path, sample_rate)
                 full_sequence.append({"type": "audio", "path": demo_path})
                 full_sequence.append({"type": "silence", "ms": 1500})
             seq = _exercise_to_sequence(exercise)
             if not seq:
-                logger.warning("Exercise %r has no segments; skipping.", exercise.name)
+                logger.warning("Exercise %r has no modulations; skipping.", exercise.name)
                 continue
             full_sequence.extend(seq)
             if i < len(exercises) - 1 and pause_between_exercises_ms > 0:
                 full_sequence.append({"type": "silence", "ms": pause_between_exercises_ms})
 
         if not full_sequence:
-            logger.warning("No segments from any exercise; output will be empty.")
+            logger.warning("No modulations from any exercise; output will be empty.")
             output_path.parent.mkdir(parents=True, exist_ok=True)
             from .render_wav import silence_wav
             silence_wav(1, sample_rate).export(str(output_path), format="wav")
@@ -108,19 +106,15 @@ def generate_wav(
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
 
-        def tts_generator(text: str, out_path: Path) -> None:
-            generate_voice.text_to_wav(
-                text, out_path, normalize=True, sample_rate=sample_rate, target_dbfs=tts_db
-            )
-
-        render_sequence_to_wav(
+        clip_paths = gather_audio_clips(
             full_sequence,
+            clip_dir,
             soundfont_path=soundfont_path,
-            output_path=output_path,
-            tts_generator=tts_generator,
             sample_rate=sample_rate,
             music_volume_db=music_db,
+            tts_volume_db=tts_db,
         )
+        concatenate_wavs(clip_paths, output_path)
     logger.info("Wrote %s", output_path)
 
 
@@ -180,7 +174,7 @@ def main() -> None:
     if output is None:
         output = Path("output") / f"{args.yaml_path.stem}.wav"
 
-    generate_wav(
+    generate_practice_track(
         yaml_path=args.yaml_path,
         output_path=output,
         soundfont_path=soundfont_path,

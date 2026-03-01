@@ -59,7 +59,7 @@ def waypoints_to_key_sequence(waypoints: List[str]) -> List[Tuple[int, int]]:
     """
     Resolve modulation waypoints to full key sequence.
     Between consecutive waypoints we step by semitones (up or down).
-    Waypoints are not duplicated at segment boundaries (each key appears once in order).
+    Waypoints are not duplicated at modulation boundaries (each key appears once in order).
     Returns list of (pitch_class, octave) for each key.
     """
     if not waypoints:
@@ -81,7 +81,7 @@ def waypoints_to_key_sequence(waypoints: List[str]) -> List[Tuple[int, int]]:
             step = -1
             midi_list = list(range(from_midi, to_midi - 1, step))
 
-        # First segment: add all keys. Later segments: skip first (same as last of previous).
+        # First modulation: add all keys. Later modulations: skip first (same as last of previous).
         start = 1 if i > 0 else 0
         for midi in midi_list[start:]:
             result.append(midi_to_note(midi))

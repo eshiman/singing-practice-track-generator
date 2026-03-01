@@ -6,7 +6,7 @@ import logging
 import subprocess
 import tempfile
 from pathlib import Path
-from typing import Callable, List
+from typing import List
 
 logger = logging.getLogger(__name__)
 
@@ -95,8 +95,8 @@ def concatenate_wavs(
         combined.export(str(output_path), format="wav")
 
 
-def render_segments_to_wav(
-    segments_midi: List[bytes],
+def render_modulations_to_wav(
+    modulations_midi: List[bytes],
     pause_ms: int,
     soundfont_path: Path,
     output_path: Path,
@@ -104,75 +104,21 @@ def render_segments_to_wav(
     music_volume_db: float = 0.0,
 ) -> None:
     """
-    Render each segment MIDI to WAV, insert silence between segments,
+    Render each modulation MIDI to WAV, insert silence between modulations,
     concatenate, and write to output_path.
-    music_volume_db: target level in dB for piano segments (e.g. -6 quieter).
+    music_volume_db: target level in dB for piano (e.g. -6 quieter).
     """
     gain = _db_to_linear_gain(music_volume_db)
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
         ordered: List[Path] = []
-        for i, midi_bytes in enumerate(segments_midi):
-            seg_wav = tmp / f"seg_{i}.wav"
-            midi_to_wav(midi_bytes, soundfont_path, seg_wav, sample_rate, gain=gain)
-            ordered.append(seg_wav)
-            if i < len(segments_midi) - 1:
+        for i, midi_bytes in enumerate(modulations_midi):
+            mod_wav = tmp / f"mod_{i}.wav"
+            midi_to_wav(midi_bytes, soundfont_path, mod_wav, sample_rate, gain=gain)
+            ordered.append(mod_wav)
+            if i < len(modulations_midi) - 1:
                 silence = silence_wav(pause_ms, sample_rate)
                 silence_path = tmp / f"silence_{i}.wav"
                 silence.export(str(silence_path), format="wav")
                 ordered.append(silence_path)
-        concatenate_wavs(ordered, output_path)
-
-
-def render_sequence_to_wav(
-    sequence: List[SegmentDescriptor],
-    soundfont_path: Path,
-    output_path: Path,
-    tts_generator: Callable[[str, Path], None],
-    sample_rate: int = 44100,
-    music_volume_db: float = 0.0,
-) -> None:
-    """
-    Render a sequence of piano, silence, TTS, and audio segments into one WAV.
-    Each descriptor is {"type": "piano", "midi": bytes},
-    {"type": "silence", "ms": int}, {"type": "tts", "text": str}, or
-    {"type": "audio", "path": Path} (pre-recorded WAV, e.g. voice demo).
-    tts_generator(text, output_path) must write the TTS WAV to output_path.
-    music_volume_db: target level in dB for piano segments.
-    """
-    gain = _db_to_linear_gain(music_volume_db)
-    with tempfile.TemporaryDirectory() as tmpdir:
-        tmp = Path(tmpdir)
-        ordered: List[Path] = []
-        for i, item in enumerate(sequence):
-            kind = item.get("type")
-            if kind == "piano":
-                midi_bytes = item["midi"]
-                seg_wav = tmp / f"piano_{i}.wav"
-                midi_to_wav(midi_bytes, soundfont_path, seg_wav, sample_rate, gain=gain)
-                ordered.append(seg_wav)
-            elif kind == "silence":
-                duration_ms = item["ms"]
-                silence = silence_wav(duration_ms, sample_rate)
-                silence_path = tmp / f"silence_{i}.wav"
-                silence.export(str(silence_path), format="wav")
-                ordered.append(silence_path)
-            elif kind == "tts":
-                text = item.get("text", "")
-                tts_path = tmp / f"tts_{i}.wav"
-                tts_generator(text, tts_path)
-                ordered.append(tts_path)
-            elif kind == "audio":
-                from pydub import AudioSegment
-                src_path = Path(item["path"])
-                seg = AudioSegment.from_wav(str(src_path))
-                if seg.frame_rate != sample_rate:
-                    seg = seg.set_frame_rate(sample_rate)
-                if seg.channels != 1:
-                    seg = seg.set_channels(1)
-                audio_path = tmp / f"audio_{i}.wav"
-                seg.export(str(audio_path), format="wav")
-                ordered.append(audio_path)
-            else:
-                raise ValueError(f"Unknown segment type: {kind!r}")
         concatenate_wavs(ordered, output_path)

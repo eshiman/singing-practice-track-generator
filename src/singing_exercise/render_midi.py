@@ -1,5 +1,5 @@
 """
-Build MIDI from segment (pitch, duration) data for piano playback.
+Build MIDI from modulation (pitch, duration) data for piano playback.
 One track, piano program; used for rendering to WAV via FluidSynth.
 """
 import io
@@ -20,7 +20,7 @@ def _ticks_per_second(bpm: int) -> float:
     return TICKS_PER_QUARTER * (bpm / 60.0)
 
 
-def segment_to_midi_bytes(
+def modulation_to_midi_bytes(
     midi_notes: List[int],
     durations_sec: List[float],
     bpm: int,
@@ -54,12 +54,12 @@ def segment_to_midi_bytes(
     return buf.getvalue()
 
 
-def write_segment_midi(
+def write_modulation_midi(
     output_path: Path,
     midi_notes: List[int],
     durations_sec: List[float],
     bpm: int,
 ) -> None:
-    """Write a segment's MIDI to a file."""
-    data = segment_to_midi_bytes(midi_notes, durations_sec, bpm)
+    """Write a modulation's MIDI to a file."""
+    data = modulation_to_midi_bytes(midi_notes, durations_sec, bpm)
     output_path.write_bytes(data)
