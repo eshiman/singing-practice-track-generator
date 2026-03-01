@@ -45,3 +45,15 @@ python scripts/run_generate_practice_track.py exercises/wee_8-5-3-1_down.yaml --
 ```bash
 python scripts/run_generate_practice_track.py exercises/wee_8-5-3-1_down.yaml -o my_track.wav
 ```
+
+**Config and volume:** Optional `config.yaml` in the project root (or current directory) can set default volumes:
+
+```yaml
+# Volume in dB. Lower = quieter.
+tts_volume_db: -6    # spoken feedback (when exercise has feedback section)
+music_volume_db: 0   # piano
+```
+
+CLI overrides: `--tts-volume-db` and `--music-volume-db` override the config for a single run.
+
+**Spoken feedback (Phase 3):** If the exercise YAML includes a `feedback` list (each entry: `key`, `which_occurrence`, `text`), the script inserts spoken cues after the specified key/occurrence. TTS uses macOS `say` on macOS, or `pyttsx3` on other platforms (`pip install pyttsx3`).

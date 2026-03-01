@@ -3,7 +3,7 @@ Process exercise: load YAML, resolve key sequence, expand to segments.
 No audio/MIDI/WAV output.
 """
 from .keys import key_sequence_to_names, waypoints_to_key_sequence
-from .raw_exercise import RawExercise
+from .raw_exercise import RawExercise, FeedbackEntry
 from .scale import scale_degrees_to_midi, scale_degrees_to_note_names
 from .timing import note_duration_seconds
 
@@ -34,3 +34,25 @@ def expand_exercise_to_segments(exercise: RawExercise):
             "pause_ms": exercise.pause_between_keys_ms,
         })
     return segments
+
+
+def feedback_after_segment(
+    segments: list[dict],
+    feedback_list: list[FeedbackEntry],
+) -> list[list[str]]:
+    """
+    For each segment index i, return the list of feedback texts to speak after that
+    segment (after the pause). Placement: after the Nth occurrence of the given key.
+    Returns list of length len(segments); each element is a list of text strings (may be empty).
+    """
+    result: list[list[str]] = [[] for _ in segments]
+    # Count occurrences of each key as we walk segments
+    occurrence: dict[str, int] = {}
+    for i, seg in enumerate(segments):
+        key_name = seg["key_name"]
+        occurrence[key_name] = occurrence.get(key_name, 0) + 1
+        for fb in feedback_list:
+            if fb.key == key_name and fb.which_occurrence == occurrence[key_name]:
+                if fb.text:
+                    result[i].append(fb.text)
+    return result
