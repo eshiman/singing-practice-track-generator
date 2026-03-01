@@ -10,13 +10,15 @@ from .scale import parse_scale_degrees, slots_to_midi, slots_to_note_names
 def expand_exercise_to_modulations(exercise: RawExercise):
     """
     For each key in the resolved sequence, compute (pitch, duration) list and pause.
-    Returns list of dicts: { "key_name", "pitches", "midi_notes", "durations_sec", "pause_ms" }.
+    Returns list of dicts: { "key_name", "pitches", "midi_notes", "durations_sec", "tie_from_previous", "pause_ms" }.
     midi_notes may contain None for rest slots; durations_sec has one entry per slot.
+    tie_from_previous[i] is True when that slot is tied to the previous (sustain, no new note_on).
     """
     keys = waypoints_to_key_sequence(exercise.modulation_waypoints)
     key_names = key_sequence_to_names(keys)
     slots = parse_scale_degrees(exercise.scale_degrees)
     durations_sec = exercise.get_durations_seconds()
+    tie_from_previous = exercise.get_tie_from_previous()
 
     modulations = []
     for (pc, oct), key_name in zip(keys, key_names):
@@ -27,6 +29,7 @@ def expand_exercise_to_modulations(exercise: RawExercise):
             "pitches": pitches,
             "midi_notes": midi_notes,
             "durations_sec": durations_sec,
+            "tie_from_previous": tie_from_previous,
             "pause_ms": exercise.pause_between_keys_ms,
         })
     return modulations

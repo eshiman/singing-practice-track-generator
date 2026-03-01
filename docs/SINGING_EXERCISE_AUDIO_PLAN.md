@@ -72,7 +72,7 @@ exercises:
 
 Exercises can use a **phrase format** with per-note durations, rests, and accidentals. See **docs/new_feature.md** for the full plan. Summary:
 
-- **`note_values`**: Optional list of durations (numeric 2, 4, 8, 16 = half, quarter, eighth, sixteenth). When present, length must match `scale_degrees`; each slot gets its own duration.
+- **`note_values`**: Optional list of durations (numeric 2, 4, 8, 16 = half, quarter, eighth, sixteenth; or strings like `"4."` for dotted quarter; `"8t"` / `"4t"` / `"16t"` for eighth / quarter / sixteenth triplets). **Ties:** Preceding note ends with `~` (e.g. `"4~"`), following note starts with `~` (e.g. `"~8t"`); middle of a tie is `"~8t~"`. Tied slots are rendered as one sustained note. When present, length must match `scale_degrees`; each slot gets its own duration.
 - **Rest "R"**: Use `"R"` in `scale_degrees` for a rest; duration comes from `note_values` or from the single `note_value`.
 - **Accidentals**: Write `"b3"` (flat) or `"#5"` (sharp) before the degree. Scale degrees in phrase format are quoted strings: `"1"`–`"8"`, `"R"`, `"b3"`, `"#5"`.
 

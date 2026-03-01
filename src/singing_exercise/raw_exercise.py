@@ -5,7 +5,7 @@ from typing import Any, Union
 
 import yaml
 
-from .timing import note_duration_seconds
+from .timing import is_tied_from_previous, note_duration_seconds
 
 
 @dataclass
@@ -48,6 +48,15 @@ class RawExercise:
             ]
         dur = note_duration_seconds(self.bpm, self.note_value)
         return [dur] * n
+
+    def get_tie_from_previous(self) -> list[bool]:
+        """
+        Return one bool per scale_degree slot: True if that slot is tied from the previous
+        (notation has leading ~, e.g. "~8t", "~8t~"). Only defined when note_values is present.
+        """
+        if self.note_values is None:
+            return [False] * len(self.scale_degrees)
+        return [is_tied_from_previous(nv) for nv in self.note_values]
 
     @classmethod
     def from_yaml_path(cls, path: Path) -> "RawExercise":

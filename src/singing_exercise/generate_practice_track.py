@@ -42,7 +42,12 @@ def _exercise_to_sequence(exercise: RawExercise) -> list:
     if not modulations:
         return []
     modulations_midi = [
-        modulation_to_midi_bytes(mod["midi_notes"], mod["durations_sec"], exercise.bpm)
+        modulation_to_midi_bytes(
+            mod["midi_notes"],
+            mod["durations_sec"],
+            exercise.bpm,
+            tie_from_previous=mod.get("tie_from_previous"),
+        )
         for mod in modulations
     ]
     return _build_sequence(exercise, modulations, modulations_midi)
