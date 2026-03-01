@@ -34,6 +34,18 @@ def _build_sequence(exercise: RawExercise, segments: list, segments_midi: list) 
     return sequence
 
 
+def _exercise_to_sequence(exercise: RawExercise) -> list:
+    """Build the full segment sequence (piano + pauses + optional TTS) for one exercise."""
+    segments = expand_exercise_to_segments(exercise)
+    if not segments:
+        return []
+    segments_midi = [
+        segment_to_midi_bytes(seg["midi_notes"], seg["durations_sec"], exercise.bpm)
+        for seg in segments
+    ]
+    return _build_sequence(exercise, segments, segments_midi)
+
+
 def generate_wav(
     yaml_path: Path,
     output_path: Path,
@@ -43,51 +55,62 @@ def generate_wav(
     music_volume_db: float | None = None,
 ) -> None:
     """
-    Load raw exercise from YAML, expand to segments, build segment MIDIs and (if feedback) TTS,
-    then render sequence to one WAV (piano + pauses + spoken feedback at key/occurrence).
+    Load a session from YAML and render to one WAV.
+
+    The YAML must be a session file (top-level "exercises" list). All exercises
+    are rendered in order into one long WAV, separated by pause_between_exercises_ms
+    (default 3000 ms).
+
     tts_volume_db / music_volume_db: when None, use values from config (see config.yaml).
     """
     config = load_config()
     tts_db = tts_volume_db if tts_volume_db is not None else config["tts_volume_db"]
     music_db = music_volume_db if music_volume_db is not None else config["music_volume_db"]
 
-    exercise = RawExercise.from_yaml_path(yaml_path)
-    segments = expand_exercise_to_segments(exercise)
-    if not segments:
-        logger.warning("No segments (empty key sequence); output will be empty.")
+    exercises, pause_between_exercises_ms = RawExercise.load_all_from_yaml_path(yaml_path)
+    if not exercises:
+        logger.warning("No exercises in YAML; output will be empty.")
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        from .render_wav import silence_wav
+        silence_wav(1, sample_rate).export(str(output_path), format="wav")
+        logger.info("Wrote empty %s", output_path)
+        return
 
-    segments_midi = []
-    for seg in segments:
-        data = segment_to_midi_bytes(
-            seg["midi_notes"],
-            seg["durations_sec"],
-            exercise.bpm,
-        )
-        segments_midi.append(data)
+    # Build one combined sequence: [ex1 segments..., silence, ex2 segments..., silence, ...]
+    full_sequence = []
+    for i, exercise in enumerate(exercises):
+        seq = _exercise_to_sequence(exercise)
+        if not seq:
+            logger.warning("Exercise %r has no segments; skipping.", exercise.name)
+            continue
+        full_sequence.extend(seq)
+        if i < len(exercises) - 1 and pause_between_exercises_ms > 0:
+            full_sequence.append({"type": "silence", "ms": pause_between_exercises_ms})
+
+    if not full_sequence:
+        logger.warning("No segments from any exercise; output will be empty.")
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        from .render_wav import silence_wav
+        silence_wav(1, sample_rate).export(str(output_path), format="wav")
+        logger.info("Wrote empty %s", output_path)
+        return
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
+    has_tts = any(ex.feedback for ex in exercises)
 
-    if exercise.feedback:
-        sequence = _build_sequence(exercise, segments, segments_midi)
-        def tts_generator(text: str, out_path: Path) -> None:
-            generate_voice.text_to_wav(text, out_path, normalize=True, sample_rate=sample_rate, target_dbfs=tts_db)
-        render_sequence_to_wav(
-            sequence,
-            soundfont_path=soundfont_path,
-            output_path=output_path,
-            tts_generator=tts_generator,
-            sample_rate=sample_rate,
-            music_volume_db=music_db,
+    def tts_generator(text: str, out_path: Path) -> None:
+        generate_voice.text_to_wav(
+            text, out_path, normalize=True, sample_rate=sample_rate, target_dbfs=tts_db
         )
-    else:
-        render_segments_to_wav(
-            segments_midi,
-            pause_ms=exercise.pause_between_keys_ms,
-            soundfont_path=soundfont_path,
-            output_path=output_path,
-            sample_rate=sample_rate,
-            music_volume_db=music_db,
-        )
+
+    render_sequence_to_wav(
+        full_sequence,
+        soundfont_path=soundfont_path,
+        output_path=output_path,
+        tts_generator=tts_generator,
+        sample_rate=sample_rate,
+        music_volume_db=music_db,
+    )
     logger.info("Wrote %s", output_path)
 
 
@@ -100,7 +123,7 @@ def main() -> None:
         "-o", "--output",
         type=Path,
         default=None,
-        help="Output WAV path (default: output/<exercise_name>.wav)",
+        help="Output WAV path (default: output/<yaml_stem>.wav)",
     )
     parser.add_argument(
         "--soundfont",
@@ -145,8 +168,7 @@ def main() -> None:
 
     output = args.output
     if output is None:
-        exercise = RawExercise.from_yaml_path(args.yaml_path)
-        output = Path("output") / f"{exercise.name}.wav"
+        output = Path("output") / f"{args.yaml_path.stem}.wav"
 
     generate_wav(
         yaml_path=args.yaml_path,

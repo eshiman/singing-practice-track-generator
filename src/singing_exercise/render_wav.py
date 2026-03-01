@@ -143,7 +143,7 @@ def render_sequence_to_wav(
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp = Path(tmpdir)
         ordered: List[Path] = []
-        for i, item in enumerate[SegmentDescriptor](sequence):
+        for i, item in enumerate(sequence):
             kind = item.get("type")
             if kind == "piano":
                 midi_bytes = item["midi"]

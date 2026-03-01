@@ -21,7 +21,6 @@ class RawExercise:
 
     name: str
     scale_degrees: list[int]
-    syllable: str
     modulation_waypoints: list[str]
     bpm: int
     note_value: str
@@ -34,6 +33,24 @@ class RawExercise:
         with open(path, encoding="utf-8") as f:
             data = yaml.safe_load(f)
         return cls.from_dict(data)
+
+    @classmethod
+    def load_all_from_yaml_path(cls, path: Path) -> tuple[list["RawExercise"], int]:
+        """
+        Load a session from a YAML file.
+
+        The file must use the session format: top-level key "exercises" (list of
+        exercise dicts). Optional top-level "pause_between_exercises_ms" (default 3000).
+
+        Returns (list of RawExercise, pause_between_exercises_ms).
+        """
+        with open(path, encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        if not data or "exercises" not in data:
+            return [], 3000
+        exercises = [cls.from_dict(ex) for ex in data["exercises"]]
+        pause_ms = int(data.get("pause_between_exercises_ms", 3000))
+        return exercises, pause_ms
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "RawExercise":
@@ -50,7 +67,6 @@ class RawExercise:
         return cls(
             name=data.get("name", "Unnamed"),
             scale_degrees=data.get("scale_degrees", []),
-            syllable=data.get("syllable", ""),
             modulation_waypoints=data.get("modulation_waypoints", []),
             bpm=data.get("bpm", 70),
             note_value=data.get("note_value", "8th"),

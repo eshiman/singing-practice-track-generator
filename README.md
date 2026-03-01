@@ -22,10 +22,35 @@ pip install -r requirements.txt
 You need also need a `.sf2` piano soundfont. I used [General User GS](https://schristiancollins.com/generaluser.php) (S. Christian Collins). Set its path via environment or CLI (see below).
 
 
+## YAML format
+
+Input is a **session file**: one YAML file with an `exercises` list. The program generates one long WAV containing all exercises in order. Optional top-level key:
+
+- `pause_between_exercises_ms` — silence between exercises (default 3000)
+
+Example `exercises/session_example.yaml`:
+
+```yaml
+pause_between_exercises_ms: 4000
+exercises:
+  - name: "Wee 8-5-3-1 (down)"
+    scale_degrees: [8, 5, 3, 1]
+    modulation_waypoints: ["D4", "G3", "Bb4", "F3"]
+    bpm: 70
+    note_value: 8th
+    pause_between_keys_ms: 2000
+    feedback: [...]
+  - name: "Wee 5-3-1 (simple)"
+    scale_degrees: [5, 3, 1]
+    ...
+```
+
 ## Running the script
+
 ```bash
 # Use the run script (adds src to path)
-python scripts/run_generate_practice_track.py exercises/wee_8-5-3-1_down.yaml
+python scripts/run_generate_practice_track.py exercises/session_example.yaml
+# -> output/session_example.wav
 ```
 
 **Soundfont:** Either set the path once:
@@ -37,13 +62,13 @@ export SOUNDFONT=/path/to/your/piano.sf2
 or pass it each run:
 
 ```bash
-python scripts/run_generate_practice_track.py exercises/wee_8-5-3-1_down.yaml --soundfont /path/to/piano.sf2
+python scripts/run_generate_practice_track.py exercises/session_example.yaml --soundfont /path/to/piano.sf2
 ```
 
-**Output:** By default the WAV is written to `output/<exercise_name>.wav`. Override with `-o`:
+**Output:** By default the WAV is written to `output/<yaml_stem>.wav`. Override with `-o`:
 
 ```bash
-python scripts/run_generate_practice_track.py exercises/wee_8-5-3-1_down.yaml -o my_track.wav
+python scripts/run_generate_practice_track.py exercises/session_example.yaml -o my_track.wav
 ```
 
 **Config and volume:** Optional `config.yaml` in the project root (or current directory) can set default volumes:

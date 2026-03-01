@@ -13,37 +13,36 @@ A script (or small application) that turns structured singing exercises into aud
 From your example, an exercise has:
 
 - **Pitch pattern**: scale degrees in order (e.g. `8, 5, 3, 1`) and direction (↑ ↘ ↘ ↓).
-- **Syllable / vowel**: e.g. "Wee" (for display/lyrics; optional for audio).
 - **Modulation path (waypoints)**: an ordered list of keys that define a path. The exercise is played in **every key along that path**: from waypoint 1 to waypoint 2 by semitones (down or up), then from waypoint 2 to waypoint 3, and so on. Example: `["D4", "G3", "Bb4", "F3"]` means play from D4 down to G3 (D4, Db4, C4, … G3), then from G3 up to Bb4, then from Bb4 down to F3—many keys in total, not just four.
 - **Timing**: **BPM** (beats per minute) within a single iteration of the pattern, with notes as **8th notes** (default 70 BPM); plus **pause duration** between key changes (or after each full run).
 - **Feedback cues** (phase 2): text plus placement by key and occurrence in the resolved key sequence (e.g. after the 1st time we play D4, after the 1st time we play Db4).
 
-### 1.2 Proposed Input Format
+### 1.2 Session Input Format
 
-- **Option A – Structured text YAML**  
-  - Define: `scale_degrees`, `syllable`, `modulation_waypoints` (ordered list of **waypoints**; full key sequence = semitone steps between consecutive waypoints, down or up), `bpm` (default 70), `note_value` (default 8th note), `pause_between_keys_ms`, and `feedback` list. Each feedback entry: `key`, `which_occurrence` (Nth time that key appears in the resolved sequence), `text`.
+Input is always a **session file**: one YAML file with a top-level **`exercises`** list. Each item in the list is one exercise (same shape as below). Optional top-level key: **`pause_between_exercises_ms`** (silence between exercises in the generated WAV; default 3000).
 
-**Example input YAML** for the exercise (↑ ↘ ↘ ↓, 8-5-3-1, Wee, with feedback). Here `modulation_waypoints` is a list of **waypoints**: the exercise is played in every key along the path (semitones between waypoints)—e.g. D4 down to G3, then G3 up to Bb4, then Bb4 down to F3.
+Each exercise in the list has: `name`, `scale_degrees`, `modulation_waypoints` (ordered list of **waypoints**; full key sequence = semitone steps between consecutive waypoints), `bpm` (default 70), `note_value` (default 8th), `pause_between_keys_ms`, and optional `feedback` list. Each feedback entry: `key`, `which_occurrence` (Nth time that key appears in the resolved sequence), `text`.
+
+**Example session YAML** (one exercise with feedback; 8-5-3-1, waypoints D4→…→G3→…→Bb4→…→F3):
 
 ```yaml
-name: "Wee 8-5-3-1 (down)"
-scale_degrees: [8, 5, 3, 1]
-syllable: "Wee"
-# Waypoints: path = D4 → … → G3 → … → Bb4 → … → F3 (semitones between each pair)
-modulation_waypoints: ["D4", "G3", "Bb4", "F3"]
-bpm: 70
-note_value: 8th
-pause_between_keys_ms: 2000
-
-feedback:
-  - key: "D4"
-    which_occurrence: 1
-    text: |
-      Don't push so much, open a little more but not much. Lower intensity.
-      To get the ees you need to do 3 things: drop the jaw a bit, keep the tongue in the right position feel the yawny space come in and not so loud!
-  - key: "Db4"
-    which_occurrence: 1
-    text: "Still lower the intensity a bit."
+pause_between_exercises_ms: 4000
+exercises:
+  - name: "Wee 8-5-3-1 (down)"
+    scale_degrees: [8, 5, 3, 1]
+    modulation_waypoints: ["D4", "G3", "Bb4", "F3"]
+    bpm: 70
+    note_value: 8th
+    pause_between_keys_ms: 2000
+    feedback:
+      - key: "D4"
+        which_occurrence: 1
+        text: |
+          Don't push so much, open a little more but not much. Lower intensity.
+          To get the ees you need to do 3 things: drop the jaw a bit, keep the tongue in the right position feel the yawny space come in and not so loud!
+      - key: "Db4"
+        which_occurrence: 1
+        text: "Still lower the intensity a bit."
 ```
 
 ---
@@ -81,7 +80,7 @@ feedback:
 
 Use **one MIDI (and thus one WAV) per logical segment** (e.g. per key, or per key + pause), then **concatenate** the WAVs into the final file. This keeps spacing adjustable and makes it straightforward to insert TTS clips between segments.
 
-1. **Load** exercise from the YAML file (§1.2).
+1. **Load** session from the YAML file (§1.2); get the list of exercises and optional `pause_between_exercises_ms`.
 2. **Resolve keys**: Expand `modulation_waypoints` into the full key sequence by stepping by semitones between consecutive waypoints (e.g. ["D4", "G3", "Bb4", "F3"] → D4, Db4, …, G3, …, Bb4, …, F3).
 3. **For each key** (each segment):  
    - Map scale degrees (8,5,3,1) to MIDI note numbers (or frequencies).  
@@ -94,7 +93,7 @@ Use **one MIDI (and thus one WAV) per logical segment** (e.g. per key, or per ke
 5. **Assembly**:  
    - Build an ordered list of WAV segments (e.g. `[key1.wav, silence.wav, key2.wav, silence.wav, …]`).  
    - Concatenate with an audio library (e.g. `pydub`) into one WAV.
-6. **Export**: Write one final audio file (e.g. WAV or MP3) per exercise.
+6. **Export**: Write one final audio file (e.g. WAV or MP3) per session (all exercises in one file).
 
 **Why segment-based?**  
 - **Spacing**: Pause duration can be changed without rebuilding one long MIDI; you only regenerate silence or the per-key MIDIs that include the rest.  
@@ -111,7 +110,7 @@ Use **one MIDI (and thus one WAV) per logical segment** (e.g. per key, or per ke
 
 ## 4. Implementation Phases
 
-**Input**: The exercise is always defined by the YAML file format described in §1.2 (no custom parsers or other input formats). Each phase can be validated independently.
+**Input**: The exercise(s) are always defined by the session YAML format described in §1.2 (top-level `exercises` list; no single-exercise file or other input formats). Each phase can be validated independently.
 
 **Phases 1 and 2** must ignore the `feedback` section of the YAML; only Phase 3 reads and uses it.
 
@@ -121,7 +120,7 @@ Use **one MIDI (and thus one WAV) per logical segment** (e.g. per key, or per ke
 
 **Goal**: Validate that the exercise model, key resolution, and segment plan are correct—without generating any audio. Input: path to the YAML file. Output: logs that describe exactly what would be generated and how it would be assembled.
 
-1. **Load YAML**: Read the exercise file (e.g. with `PyYAML`) into the exercise model. Use only: `name`, `scale_degrees`, `syllable`, `modulation_waypoints`, `bpm`, `note_value`, `pause_between_keys_ms`. Ignore `feedback` entirely.
+1. **Load YAML**: Read the session file (e.g. with `PyYAML`). Require top-level `exercises` list; for each item use: `name`, `scale_degrees`, `modulation_waypoints`, `bpm`, `note_value`, `pause_between_keys_ms`. Ignore `feedback` entirely.
 2. **Resolve key sequence**: From `modulation_waypoints`, compute the full ordered list of keys (semitones between consecutive waypoints). Log that list (e.g. `D4, Db4, C4, …, G3, …, Bb4, …, F3`).
 3. **Key/scale logic**: For a given key (e.g. D4), map scale degrees 1–8 to concrete pitches (MIDI note numbers or note names). No MIDI or WAV files yet—this is used only to describe what will be played.
 4. **Per-key segment description**: For each key in the resolved sequence, compute note duration from BPM + note value (e.g. 8th note at 70 BPM) and produce a *description* of that segment: which pitches, durations, and the pause length after it. Do not write MIDI or WAV.
@@ -130,7 +129,7 @@ Use **one MIDI (and thus one WAV) per logical segment** (e.g. per key, or per ke
    - For each segment: key name; list of (pitch, duration) for the pattern; pause duration after this segment.
    - Final assembly order: e.g. `[segment_1, silence_1, segment_2, silence_2, …]` (or “segment N = key N notes + pause” if pause is baked per segment).
 
-**Validation**: Run the script on an example YAML. Inspect the logs to confirm the key sequence, the pitch list per key, and the assembly order match the intended exercise. No sound libraries (FluidSynth, pydub) are required in Phase 1.
+**Validation**: Run the script on an example session YAML. Inspect the logs to confirm the key sequence, the pitch list per key, and the assembly order match the intended exercise(s). No sound libraries (FluidSynth, pydub) are required in Phase 1.
 
 ---
 
@@ -138,13 +137,13 @@ Use **one MIDI (and thus one WAV) per logical segment** (e.g. per key, or per ke
 
 **Goal**: Add the Python sound-processing stack. Input: same YAML file (still ignoring `feedback`). Output: a single WAV file with piano playing the pattern in each key and pauses between keys.
 
-1. **Reuse Phase 1**: Load YAML, resolve keys, and build the per-key (pitch, duration) lists and pause durations. No change to the model or key resolution.
+1. **Reuse Phase 1**: Load session YAML, resolve keys for each exercise, and build the per-key (pitch, duration) lists and pause durations. No change to the model or key resolution.
 2. **MIDI generation**: For each key segment, turn its (pitch, duration) list into a MIDI file (one track, piano). Optionally generate a separate “silence” WAV of length `pause_between_keys_ms` (or bake the rest into each key’s MIDI and render one WAV per key that includes the pause).
 3. **MIDI → WAV**: Use a soundfont renderer (e.g. FluidSynth / `pyfluidsynth` or subprocess to `fluidsynth` CLI) to render each MIDI segment to a WAV file.
 4. **Assembly**: Build the ordered list of WAV segments (key1.wav, silence.wav, key2.wav, … or key1_with_pause.wav, key2_with_pause.wav, …) and concatenate them into one WAV using an audio library (e.g. `pydub`).
-5. **CLI**: Input = path to exercise YAML (and optionally output path); output = one final audio file (e.g. WAV).
+5. **CLI**: Input = path to session YAML (and optionally output path); output = one final audio file (e.g. WAV).
 
-**Validation**: Run on the same example YAML. Confirm the output WAV contains the correct number of key segments, correct timing (BPM, pause length), and no spoken feedback. The segment-based pipeline is in place for Phase 3.
+**Validation**: Run on the same example session YAML. Confirm the output WAV contains the correct number of key segments (across all exercises), correct timing (BPM, pause length), and no spoken feedback. The segment-based pipeline is in place for Phase 3.
 
 ---
 
@@ -152,12 +151,12 @@ Use **one MIDI (and thus one WAV) per logical segment** (e.g. per key, or per ke
 
 **Goal**: Read the `feedback` section from the YAML and produce a final WAV that includes spoken cues at the right positions.
 
-1. **Load feedback**: When loading the YAML, now also read the `feedback` list (each entry: `key`, `which_occurrence`, `text`).
+1. **Load feedback**: When loading the session YAML, now also read the `feedback` list for each exercise (each entry: `key`, `which_occurrence`, `text`).
 2. **Placement**: When building the segment list for assembly, for each feedback item insert a TTS WAV *after* the Nth occurrence of the given key in the resolved key sequence (e.g. after the 1st time we play D4).
 3. **TTS**: For each feedback item, generate speech from `text` (e.g. macOS `say`, or `pyttsx3`, or a cloud TTS API) and save a short WAV. Normalize level so it is audible but not overwhelming.
 4. **Assembly with speech**: Build the segment list as (piano WAV | pause WAV | TTS WAV as needed). Insert each TTS WAV at the correct position (after the corresponding key’s segment), then concatenate all segments into one final WAV with the same library used in Phase 2.
 
-**Validation**: Run on an exercise YAML that includes `feedback` entries. Confirm the output WAV has piano, pauses, and spoken feedback at the expected keys/occurrences.
+**Validation**: Run on a session YAML whose exercises include `feedback` entries. Confirm the output WAV has piano, pauses, and spoken feedback at the expected keys/occurrences.
 
 ---
 
@@ -180,33 +179,32 @@ Use **one MIDI (and thus one WAV) per logical segment** (e.g. per key, or per ke
 ## 6. File and Repo Layout (Suggested)
 
 - **Config**: Default paths for soundfont, output dir, TTS voice.
-- **Exercise format**: One directory for exercise files (YAML/JSON and/or .txt in your format); one schema or example per format.
-- **Output**: Generated audio files (e.g. `output/<exercise_name>_<timestamp>.wav`).
+- **Session format**: One directory for session YAML files (top-level `exercises` list); one example session (e.g. `session_example.yaml`).
+- **Output**: Generated audio files (e.g. `output/<yaml_stem>.wav`).
 - **Docs**: This plan; later, a short “exercise format reference” and “how to add feedback” guide.
 
 ---
 
-## 7. Example Exercise (Structured)
+## 7. Example Session (Structured)
 
-A simpler example: two waypoints so the path is a single run down by semitones (D4 down to B3).
+A simpler session with one exercise: two waypoints so the path is a single run down by semitones (D4 down to B3).
 
 ```yaml
-name: "Wee 8-5-3-1"
-scale_degrees: [8, 5, 3, 1]
-syllable: "Wee"
-# Waypoints: path = D4 down to B3 (D4, Db4, C4, B3)
-modulation_waypoints: ["D4", "B3"]
-bpm: 70
-note_value: 8th
-pause_between_keys_ms: 2000
-
-feedback:
-  - key: "D4"
-    which_occurrence: 1
-    text: "Don't push so much, open a little more but not much. Lower intensity."
-  - key: "Db4"
-    which_occurrence: 1
-    text: "Still lower the intensity a bit."
+pause_between_exercises_ms: 3000
+exercises:
+  - name: "Wee 8-5-3-1"
+    scale_degrees: [8, 5, 3, 1]
+    modulation_waypoints: ["D4", "B3"]
+    bpm: 70
+    note_value: 8th
+    pause_between_keys_ms: 2000
+    feedback:
+      - key: "D4"
+        which_occurrence: 1
+        text: "Don't push so much, open a little more but not much. Lower intensity."
+      - key: "Db4"
+        which_occurrence: 1
+        text: "Still lower the intensity a bit."
 ```
 
 This would yield: piano playing 8-5-3-1 in D4 → pause → Db4 → pause → C4 → pause → B3, with spoken lines after the first D4 and after the first Db4 once TTS is implemented.
@@ -215,8 +213,8 @@ This would yield: piano playing 8-5-3-1 in D4 → pause → Db4 → pause → C4
 
 ## 8. Success Criteria
 
-- **Phase 1**: Running the script on a YAML exercise file produces logs that correctly list the resolved key sequence, the (pitch, duration) plan per key, and the assembly order—with no audio output. Validating the logs confirms the music logic.
-- **Phase 2**: Running on the same YAML (without using `feedback`) produces a single WAV with piano and pauses in the correct order and timing.
-- **Phase 3**: Running on a YAML that includes `feedback` entries produces a WAV that includes spoken feedback at the right key/occurrence positions.
+- **Phase 1**: Running the script on a session YAML file produces logs that correctly list the resolved key sequence, the (pitch, duration) plan per key, and the assembly order—with no audio output. Validating the logs confirms the music logic.
+- **Phase 2**: Running on the same session YAML (without using `feedback`) produces a single WAV with piano and pauses in the correct order and timing.
+- **Phase 3**: Running on a session YAML whose exercises include `feedback` entries produces a WAV that includes spoken feedback at the right key/occurrence positions.
 
 Next step: implement Phase 1 (load YAML, resolve keys, log the generation plan) in this repo.
