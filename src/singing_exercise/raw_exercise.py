@@ -26,6 +26,7 @@ class RawExercise:
     note_value: str
     pause_between_keys_ms: int
     feedback: list[FeedbackEntry]
+    demo: bool = False
 
     @classmethod
     def from_yaml_path(cls, path: Path) -> "RawExercise":
@@ -72,4 +73,5 @@ class RawExercise:
             note_value=data.get("note_value", "8th"),
             pause_between_keys_ms=data.get("pause_between_keys_ms", 2000),
             feedback=feedback,
+            demo=bool(data.get("demo", False)),
         )

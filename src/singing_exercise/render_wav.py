@@ -10,7 +10,7 @@ from typing import Callable, List
 
 logger = logging.getLogger(__name__)
 
-# Segment descriptor: {"type": "piano", "midi": bytes} | {"type": "silence", "ms": int} | {"type": "tts", "text": str}
+# Segment descriptor: {"type": "piano", "midi": bytes} | {"type": "silence", "ms": int} | {"type": "tts", "text": str} | {"type": "audio", "path": Path}
 SegmentDescriptor = dict
 
 
@@ -133,9 +133,10 @@ def render_sequence_to_wav(
     music_volume_db: float = 0.0,
 ) -> None:
     """
-    Render a sequence of piano, silence, and TTS segments into one WAV.
-    Each descriptor is {"type": "piano", "midi": bytes} or
-    {"type": "silence", "ms": int} or {"type": "tts", "text": str}.
+    Render a sequence of piano, silence, TTS, and audio segments into one WAV.
+    Each descriptor is {"type": "piano", "midi": bytes},
+    {"type": "silence", "ms": int}, {"type": "tts", "text": str}, or
+    {"type": "audio", "path": Path} (pre-recorded WAV, e.g. voice demo).
     tts_generator(text, output_path) must write the TTS WAV to output_path.
     music_volume_db: target level in dB for piano segments.
     """
@@ -161,6 +162,17 @@ def render_sequence_to_wav(
                 tts_path = tmp / f"tts_{i}.wav"
                 tts_generator(text, tts_path)
                 ordered.append(tts_path)
+            elif kind == "audio":
+                from pydub import AudioSegment
+                src_path = Path(item["path"])
+                seg = AudioSegment.from_wav(str(src_path))
+                if seg.frame_rate != sample_rate:
+                    seg = seg.set_frame_rate(sample_rate)
+                if seg.channels != 1:
+                    seg = seg.set_channels(1)
+                audio_path = tmp / f"audio_{i}.wav"
+                seg.export(str(audio_path), format="wav")
+                ordered.append(audio_path)
             else:
                 raise ValueError(f"Unknown segment type: {kind!r}")
         concatenate_wavs(ordered, output_path)

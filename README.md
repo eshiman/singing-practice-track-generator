@@ -82,3 +82,5 @@ music_volume_db: 0   # piano
 CLI overrides: `--tts-volume-db` and `--music-volume-db` override the config for a single run.
 
 **Spoken feedback (Phase 3):** If the exercise YAML includes a `feedback` list (each entry: `key`, `which_occurrence`, `text`), the script inserts spoken cues after the specified key/occurrence. TTS uses macOS `say` on macOS, or `pyttsx3` on other platforms (`pip install pyttsx3`).
+
+**Voice demo:** Set `demo: true` on an exercise to record a voice demo before that exercise. When you run the script, it will prompt you to record from your default microphone; press Enter when finished. The recording is inserted at the start of that exercise in the output WAV (with a short pause after it). Requires **PyAudio** (`pip install PyAudio`); on macOS you may need `brew install portaudio` first.

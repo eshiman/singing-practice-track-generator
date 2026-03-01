@@ -7,6 +7,7 @@ import argparse
 import logging
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 from .config import load_config
@@ -15,6 +16,7 @@ from .render_midi import segment_to_midi_bytes
 from .raw_exercise import RawExercise
 from .process_exercise import expand_exercise_to_segments, feedback_after_segment
 from . import generate_voice
+from .record_demo import record_demo
 
 logger = logging.getLogger(__name__)
 
@@ -77,40 +79,48 @@ def generate_wav(
         return
 
     # Build one combined sequence: [ex1 segments..., silence, ex2 segments..., silence, ...]
-    full_sequence = []
-    for i, exercise in enumerate(exercises):
-        seq = _exercise_to_sequence(exercise)
-        if not seq:
-            logger.warning("Exercise %r has no segments; skipping.", exercise.name)
-            continue
-        full_sequence.extend(seq)
-        if i < len(exercises) - 1 and pause_between_exercises_ms > 0:
-            full_sequence.append({"type": "silence", "ms": pause_between_exercises_ms})
+    # For exercises with demo=True, record a voice demo first and prepend it (with a short silence).
+    # Use a temp dir for demo WAVs so they persist until we finish rendering.
+    with tempfile.TemporaryDirectory() as demo_tmp:
+        demo_dir = Path(demo_tmp)
+        full_sequence = []
+        for i, exercise in enumerate(exercises):
+            if exercise.demo:
+                demo_path = demo_dir / f"demo_{i}.wav"
+                record_demo(exercise.name, demo_path, sample_rate)
+                full_sequence.append({"type": "audio", "path": demo_path})
+                full_sequence.append({"type": "silence", "ms": 1500})
+            seq = _exercise_to_sequence(exercise)
+            if not seq:
+                logger.warning("Exercise %r has no segments; skipping.", exercise.name)
+                continue
+            full_sequence.extend(seq)
+            if i < len(exercises) - 1 and pause_between_exercises_ms > 0:
+                full_sequence.append({"type": "silence", "ms": pause_between_exercises_ms})
 
-    if not full_sequence:
-        logger.warning("No segments from any exercise; output will be empty.")
+        if not full_sequence:
+            logger.warning("No segments from any exercise; output will be empty.")
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            from .render_wav import silence_wav
+            silence_wav(1, sample_rate).export(str(output_path), format="wav")
+            logger.info("Wrote empty %s", output_path)
+            return
+
         output_path.parent.mkdir(parents=True, exist_ok=True)
-        from .render_wav import silence_wav
-        silence_wav(1, sample_rate).export(str(output_path), format="wav")
-        logger.info("Wrote empty %s", output_path)
-        return
 
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    has_tts = any(ex.feedback for ex in exercises)
+        def tts_generator(text: str, out_path: Path) -> None:
+            generate_voice.text_to_wav(
+                text, out_path, normalize=True, sample_rate=sample_rate, target_dbfs=tts_db
+            )
 
-    def tts_generator(text: str, out_path: Path) -> None:
-        generate_voice.text_to_wav(
-            text, out_path, normalize=True, sample_rate=sample_rate, target_dbfs=tts_db
+        render_sequence_to_wav(
+            full_sequence,
+            soundfont_path=soundfont_path,
+            output_path=output_path,
+            tts_generator=tts_generator,
+            sample_rate=sample_rate,
+            music_volume_db=music_db,
         )
-
-    render_sequence_to_wav(
-        full_sequence,
-        soundfont_path=soundfont_path,
-        output_path=output_path,
-        tts_generator=tts_generator,
-        sample_rate=sample_rate,
-        music_volume_db=music_db,
-    )
     logger.info("Wrote %s", output_path)
 
 
