@@ -7,33 +7,44 @@ from .keys import midi_to_note, note_name, note_to_midi
 # Major scale semitone offsets from tonic: degree 1..8
 MAJOR_SCALE_OFFSETS = [0, 2, 4, 5, 7, 9, 11, 12]
 
-# Parsed slot: ("rest",) or ("degree", degree_1_8, "natural"|"flat"|"sharp")
+# Parsed slot: ("rest",) or ("degree", degree_int, "natural"|"flat"|"sharp")
 ScaleDegreeSlot = Union[
     Tuple[Literal["rest"]],
     Tuple[Literal["degree"], int, Literal["natural", "flat", "sharp"]],
 ]
 
-# Pattern: optional b or #, then digit 1-8
-_DEGREE_PATTERN = re.compile(r"^(b|#)?([1-8])$", re.IGNORECASE)
+# Pattern: optional b or #, then optional minus and digits (any integer degree)
+_DEGREE_PATTERN = re.compile(r"^(b|#)?(-?\d+)$", re.IGNORECASE)
+
+
+def _degree_to_offset(degree: int) -> int:
+    """
+    Map any scale degree to semitone offset from key tonic.
+    Scale has 7 steps per octave; degree 8 = octave (same as 1 up). So degree 9 = step 2
+    one octave up (whole step above 8), 10 = step 3 up, etc. 0,-1..-6 = octave down.
+    """
+    # Period is 7: 1-7 = steps, 8 = octave (step 1 + 12), 9 = step 2 + 12, ...
+    step_1_7 = ((degree - 1) % 7) + 1  # 1..7
+    octave_offset = (degree - 1) // 7
+    return MAJOR_SCALE_OFFSETS[step_1_7 - 1] + 12 * octave_offset
 
 
 def parse_scale_degree_entry(entry: Union[int, str]) -> ScaleDegreeSlot:
     """
     Parse one scale_degrees entry from YAML.
     Returns ("rest",) for "R", or ("degree", degree_int, accidental) for pitches.
-    Accepts: int 1-8 (natural), str "1"-"8", "R", "b3", "#5".
+    Accepts: any int (natural), str "1"-"8", "9", "-1", etc., "R", "b3", "#5".
+    Degrees outside 1-8 map by octave: 9=2 up, 0=8 down, -1=7 down, etc.
     """
     if isinstance(entry, int):
-        if 1 <= entry <= 8:
-            return ("degree", entry, "natural")
-        raise ValueError(f"Scale degree must be 1-8, got {entry}")
+        return ("degree", entry, "natural")
     s = str(entry).strip()
     if s.upper() == "R":
         return ("rest",)
     m = _DEGREE_PATTERN.match(s)
     if not m:
         raise ValueError(
-            f"Invalid scale degree entry {entry!r}; use 1-8, 'R', 'b3', '#5', etc."
+            f"Invalid scale degree entry {entry!r}; use an integer degree, 'R', 'b3', '#5', etc."
         )
     acc_char, num = m.group(1), int(m.group(2))
     accidental: Literal["natural", "flat", "sharp"] = (
@@ -63,7 +74,7 @@ def slots_to_midi(
             result.append(None)
             continue
         _, degree, accidental = slot
-        offset = MAJOR_SCALE_OFFSETS[degree - 1]
+        offset = _degree_to_offset(degree)
         if accidental == "flat":
             offset -= 1
         elif accidental == "sharp":
@@ -88,16 +99,14 @@ def scale_degrees_to_midi(
     scale_degrees: List[int],
 ) -> List[int]:
     """
-    Map scale degrees (1-8) to MIDI note numbers in the given key (major scale).
-    Degree 1 = tonic in key octave, degree 8 = octave above tonic.
+    Map scale degrees to MIDI note numbers in the given key (major scale).
+    Degree 1 = tonic, 8 = octave above; 9+ and 0/-1/-2... extend by octaves.
     (Legacy: use parse_scale_degrees + slots_to_midi for rest/accidentals.)
     """
     base_midi = note_to_midi(key_pitch_class, key_octave)
     result = []
     for d in scale_degrees:
-        if not 1 <= d <= 8:
-            raise ValueError(f"Scale degree must be 1-8, got {d}")
-        offset = MAJOR_SCALE_OFFSETS[d - 1]
+        offset = _degree_to_offset(d)
         result.append(base_midi + offset)
     return result
 
