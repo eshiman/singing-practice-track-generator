@@ -1,9 +1,11 @@
 """Raw exercise model: load YAML and represent unprocessed exercise."""
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Union
 
 import yaml
+
+from .timing import note_duration_seconds
 
 
 @dataclass
@@ -20,13 +22,32 @@ class RawExercise:
     """Raw exercise definition from YAML (used as input for plan generation)."""
 
     name: str
-    scale_degrees: list[int]
+    scale_degrees: list[Union[int, str]]  # int 1-8 (legacy) or str "1"-"8", "R", "b3", "#5"
     modulation_waypoints: list[str]
     bpm: int
     note_value: str
     pause_between_keys_ms: int
     feedback: list[FeedbackEntry]
     demo: bool = False
+    note_values: list[Union[int, str]] | None = None  # optional per-slot durations (2,4,8,16 or "8th" etc.)
+
+    def get_durations_seconds(self) -> list[float]:
+        """
+        Return one duration in seconds per scale_degree slot.
+        Uses note_values when present (length must match scale_degrees), else note_value for all.
+        """
+        n = len(self.scale_degrees)
+        if self.note_values is not None:
+            if len(self.note_values) != n:
+                raise ValueError(
+                    f"note_values length ({len(self.note_values)}) must match scale_degrees length ({n})"
+                )
+            return [
+                note_duration_seconds(self.bpm, nv)
+                for nv in self.note_values
+            ]
+        dur = note_duration_seconds(self.bpm, self.note_value)
+        return [dur] * n
 
     @classmethod
     def from_yaml_path(cls, path: Path) -> "RawExercise":
@@ -65,13 +86,20 @@ class RawExercise:
             )
             for entry in feedback_raw
         ]
+        scale_degrees = data.get("scale_degrees", [])
+        note_values = data.get("note_values")
+        if note_values is not None and len(note_values) != len(scale_degrees):
+            raise ValueError(
+                f"note_values length ({len(note_values)}) must match scale_degrees length ({len(scale_degrees)})"
+            )
         return cls(
             name=data.get("name", "Unnamed"),
-            scale_degrees=data.get("scale_degrees", []),
+            scale_degrees=scale_degrees,
             modulation_waypoints=data.get("modulation_waypoints", []),
             bpm=data.get("bpm", 70),
             note_value=data.get("note_value", "8th"),
             pause_between_keys_ms=data.get("pause_between_keys_ms", 2000),
             feedback=feedback,
             demo=bool(data.get("demo", False)),
+            note_values=note_values,
         )

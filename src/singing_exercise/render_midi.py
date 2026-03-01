@@ -4,7 +4,7 @@ One track, piano program; used for rendering to WAV via FluidSynth.
 """
 import io
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 try:
     import mido
@@ -21,12 +21,13 @@ def _ticks_per_second(bpm: int) -> float:
 
 
 def modulation_to_midi_bytes(
-    midi_notes: List[int],
+    midi_notes: List[Optional[int]],
     durations_sec: List[float],
     bpm: int,
 ) -> bytes:
     """
     Build a one-track piano MIDI file in memory.
+    midi_notes may contain None for rest slots; time advances by durations_sec without a note.
     Returns MIDI file as bytes (format 1, one track).
     """
     if mido is None:
@@ -44,10 +45,15 @@ def modulation_to_midi_bytes(
     # Piano = program 0 on channel 0
     track.append(mido.Message("program_change", program=0, time=0))
 
+    pending_ticks = 0
     for note, dur in zip(midi_notes, durations_sec):
         delta_ticks = int(round(dur * tps))
-        track.append(mido.Message("note_on", note=note, velocity=72, time=0))
-        track.append(mido.Message("note_off", note=note, velocity=0, time=delta_ticks))
+        if note is not None:
+            track.append(mido.Message("note_on", note=note, velocity=72, time=pending_ticks))
+            track.append(mido.Message("note_off", note=note, velocity=0, time=delta_ticks))
+            pending_ticks = 0
+        else:
+            pending_ticks += delta_ticks
 
     buf = io.BytesIO()
     midi.save(file=buf)
@@ -56,7 +62,7 @@ def modulation_to_midi_bytes(
 
 def write_modulation_midi(
     output_path: Path,
-    midi_notes: List[int],
+    midi_notes: List[Optional[int]],
     durations_sec: List[float],
     bpm: int,
 ) -> None:

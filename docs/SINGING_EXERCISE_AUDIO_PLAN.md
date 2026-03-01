@@ -68,6 +68,16 @@ exercises:
 - **Pause**: Single “pause between keys” (or “pause after each run”) in ms or seconds—unchanged by BPM; still an absolute duration.
 - **Order**: For each key: play the pattern at the given BPM with 8th-note rhythm, then insert the pause, then next key.
 
+### 2.4 Phrase format (rhythm, rests, accidentals)
+
+Exercises can use a **phrase format** with per-note durations, rests, and accidentals. See **docs/new_feature.md** for the full plan. Summary:
+
+- **`note_values`**: Optional list of durations (numeric 2, 4, 8, 16 = half, quarter, eighth, sixteenth). When present, length must match `scale_degrees`; each slot gets its own duration.
+- **Rest "R"**: Use `"R"` in `scale_degrees` for a rest; duration comes from `note_values` or from the single `note_value`.
+- **Accidentals**: Write `"b3"` (flat) or `"#5"` (sharp) before the degree. Scale degrees in phrase format are quoted strings: `"1"`–`"8"`, `"R"`, `"b3"`, `"#5"`.
+
+Example: `scale_degrees: ["8", "5", "R", "b3", "1"]` with `note_values: [8, 4, 4, 4, 2]` plays eighth, quarter, rest (quarter), quarter, half in each key.
+
 ---
 
 ## 3. Audio Generation
@@ -218,3 +228,10 @@ This would yield: piano playing 8-5-3-1 in D4 → pause → Db4 → pause → C4
 - **Phase 3**: Running on a session YAML whose exercises include `feedback` entries produces a WAV that includes spoken feedback at the right key/occurrence positions.
 
 Next step: implement Phase 1 (load YAML, resolve keys, log the generation plan) in this repo.
+
+
+
+
+## 9. Some additional things I'd like to do
+- input sound clips and have them modulate up and down keys
+- input a bit of music (lilypond format maybe?) and have it generate midi clips
