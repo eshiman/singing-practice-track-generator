@@ -1,7 +1,7 @@
 """
 Record a voice demo from the default microphone until the user presses Enter.
 Used when an exercise has demo=True: the recording is inserted before the exercise in the track.
-Uses PyAudio and wave (same approach as typical voice-recording scripts).
+Prompts for Enter when ready to start, then Enter again when done. Uses PyAudio and wave.
 """
 import logging
 import sys
@@ -64,8 +64,8 @@ def add_silence(snd_data: array, seconds: float) -> array:
 
 def record_demo(exercise_name: str, output_path: Path, sample_rate: int = RATE) -> Path:
     """
-    Prompt the user to record a demo, record from the default microphone until they press Enter,
-    then save as WAV at output_path. Returns output_path.
+    Prompt the user to press Enter when ready, then record from the default microphone until they press Enter again,
+    and save as WAV at output_path. Returns output_path.
 
     Uses PyAudio. Trims leading/trailing silence and pads with 0.5 s silence; only scales down if clipping.
     """
@@ -73,6 +73,13 @@ def record_demo(exercise_name: str, output_path: Path, sample_rate: int = RATE) 
         raise ValueError(f"record_demo expects sample_rate={RATE}, got {sample_rate}")
     output_path = Path(output_path).resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    print(f'Record a demo for "{exercise_name}". Press Enter when ready to start.', flush=True)
+    sys.stdout.flush()
+    try:
+        input()
+    except (EOFError, KeyboardInterrupt):
+        pass
 
     stop_event = threading.Event()
     chunks: list[bytes] = []
@@ -103,7 +110,7 @@ def record_demo(exercise_name: str, output_path: Path, sample_rate: int = RATE) 
     thread.start()
     time.sleep(0.4)
 
-    msg = f'Record a demo for "{exercise_name}". Press Enter when done.'
+    msg = "Recording... Press Enter when done."
     print(msg, flush=True)
     sys.stdout.flush()
 
