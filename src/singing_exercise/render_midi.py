@@ -87,9 +87,13 @@ def modulation_to_midi_bytes(
                             if count == len(notes):
                                 break
                     continue
-            # Note on: all chord notes at once (only first message gets pending_ticks; rest delta 0)
+            # Softer velocity for chords; single notes keep default
+            vel = 56 if len(notes) > 1 else 72
+            # Note on: chord notes slightly staggered (1 tick) for softer attack; first gets pending_ticks
+            chord_spread = 1 if len(notes) > 1 else 0
             for j, note in enumerate(notes):
-                track.append(mido.Message("note_on", note=note, velocity=72, time=pending_ticks if j == 0 else 0))
+                t = pending_ticks if j == 0 else chord_spread
+                track.append(mido.Message("note_on", note=note, velocity=vel, time=t))
             # Note off: all stop together (only first message gets delta_ticks; rest delta 0)
             for j, note in enumerate(notes):
                 track.append(mido.Message("note_off", note=note, velocity=0, time=delta_ticks if j == 0 else 0))
