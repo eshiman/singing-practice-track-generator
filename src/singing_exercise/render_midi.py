@@ -4,7 +4,7 @@ One track, piano program; used for rendering to WAV via FluidSynth.
 """
 import io
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Union
 
 try:
     import mido
@@ -20,17 +20,21 @@ def _ticks_per_second(bpm: int) -> float:
     return TICKS_PER_QUARTER * (bpm / 60.0)
 
 
+# Per-slot: single pitch (int), rest (None), or chord (list of int)
+MidiSlot = Optional[Union[int, List[int]]]
+
+
 def modulation_to_midi_bytes(
-    midi_notes: List[Optional[int]],
+    midi_notes: List[MidiSlot],
     durations_sec: List[float],
     bpm: int,
     tie_from_previous: Optional[List[bool]] = None,
 ) -> bytes:
     """
     Build a one-track piano MIDI file in memory.
-    midi_notes may contain None for rest slots; time advances by durations_sec without a note.
-    When tie_from_previous[i] is True and the previous slot was the same pitch, the note is
-    merged (no new note_on; duration is added to the previous note).
+    midi_notes may contain None (rest), int (single note), or list of int (chord).
+    When tie_from_previous[i] is True and the previous slot was the same pitch/chord, the note(s)
+    are merged (no new note_on; duration is added to the previous).
     Returns MIDI file as bytes (format 1, one track).
     """
     if mido is None:
@@ -54,31 +58,41 @@ def modulation_to_midi_bytes(
     # Piano = program 0 on channel 0
     track.append(mido.Message("program_change", program=0, time=0))
 
+    def _notes_list(slot: MidiSlot) -> Optional[List[int]]:
+        if slot is None:
+            return None
+        return [slot] if isinstance(slot, int) else slot
+
     pending_ticks = 0
-    for i, (note, dur) in enumerate(zip(midi_notes, durations_sec)):
+    for i, (note_slot, dur) in enumerate(zip(midi_notes, durations_sec)):
         delta_ticks = int(round(dur * tps))
         tied = tie_from_previous[i] if i < len(tie_from_previous) else False
+        notes = _notes_list(note_slot)
 
-        if note is not None:
-            # Merge with previous note only if tied and same pitch as last note_on
-            if tied and track and pending_ticks == 0:
-                # Find the last note_off for the same note and extend its time
-                last_note = None
+        if notes is not None:
+            # Tie: extend previous chord/note only if same set of pitches
+            if tied and track and pending_ticks == 0 and notes:
+                last_notes: List[int] = []
                 for msg in reversed(track):
-                    if msg.type == "note_on" and msg.velocity > 0:
-                        last_note = msg.note
+                    if msg.type == "note_off":
+                        last_notes.append(msg.note)
+                    elif msg.type == "note_on" and msg.velocity > 0:
                         break
-                if last_note == note:
-                    # Extend previous note: change the delta of the last note_off
+                if sorted(last_notes) == sorted(notes):
+                    count = 0
                     for j in range(len(track) - 1, -1, -1):
-                        if track[j].type == "note_off" and track[j].note == note:
+                        if track[j].type == "note_off" and track[j].note in notes:
                             track[j].time += delta_ticks
-                            break
-                        if track[j].type == "note_on":
-                            break
+                            count += 1
+                            if count == len(notes):
+                                break
                     continue
-            track.append(mido.Message("note_on", note=note, velocity=72, time=pending_ticks))
-            track.append(mido.Message("note_off", note=note, velocity=0, time=delta_ticks))
+            # Note on: all chord notes at once (only first message gets pending_ticks; rest delta 0)
+            for j, note in enumerate(notes):
+                track.append(mido.Message("note_on", note=note, velocity=72, time=pending_ticks if j == 0 else 0))
+            # Note off: all stop together (only first message gets delta_ticks; rest delta 0)
+            for j, note in enumerate(notes):
+                track.append(mido.Message("note_off", note=note, velocity=0, time=delta_ticks if j == 0 else 0))
             pending_ticks = 0
         else:
             pending_ticks += delta_ticks
@@ -90,7 +104,7 @@ def modulation_to_midi_bytes(
 
 def write_modulation_midi(
     output_path: Path,
-    midi_notes: List[Optional[int]],
+    midi_notes: List[MidiSlot],
     durations_sec: List[float],
     bpm: int,
     tie_from_previous: Optional[List[bool]] = None,

@@ -11,7 +11,7 @@ def expand_exercise_to_modulations(exercise: RawExercise):
     """
     For each key in the resolved sequence, compute (pitch, duration) list and pause.
     Returns list of dicts: { "key_name", "pitches", "midi_notes", "durations_sec", "tie_from_previous", "pause_ms" }.
-    midi_notes may contain None for rest slots; durations_sec has one entry per slot.
+    midi_notes may contain None (rest), int (single note), or list of int (chord); durations_sec has one entry per slot.
     tie_from_previous[i] is True when that slot is tied to the previous (sustain, no new note_on).
     """
     keys = waypoints_to_key_sequence(exercise.modulation_waypoints)

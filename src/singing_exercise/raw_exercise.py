@@ -22,7 +22,7 @@ class RawExercise:
     """Raw exercise definition from YAML (used as input for plan generation)."""
 
     name: str
-    scale_degrees: list[Union[int, str]]  # int (any degree) or str "1"-"8", "9", "-1", "R", "b3", "#5"
+    scale_degrees: list[Union[int, str, list]]  # int/str for single note or "R"; list of int/str for chord e.g. [1, 3, 5]
     modulation_waypoints: list[str]
     bpm: int
     note_value: str
