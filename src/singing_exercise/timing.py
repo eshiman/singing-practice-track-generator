@@ -2,8 +2,8 @@
 
 from typing import Union
 
-# Numeric note values: denominator in 4/4 (2=half, 4=quarter, 8=eighth, 16=sixteenth)
-NUMERIC_TO_BEATS = {2: 2.0, 4: 1.0, 8: 0.5, 16: 0.25}
+# Numeric note values: denominator in 4/4 (1=whole, 2=half, 4=quarter, 8=eighth, 16=sixteenth)
+NUMERIC_TO_BEATS = {1: 4.0, 2: 2.0, 4: 1.0, 8: 0.5, 16: 0.25}
 
 # Triplets: 3 in the time of 2 of the base note (in 4/4)
 # 8t: 3 in 1 quarter → 1/3 beat each
@@ -33,7 +33,7 @@ def _beats_for_note_value(note_value: Union[int, str]) -> float:
         beats = NUMERIC_TO_BEATS.get(note_value)
         if beats is None:
             raise ValueError(
-                f"Invalid numeric note value {note_value}; use 2, 4, 8, or 16"
+                f"Invalid numeric note value {note_value}; use 1, 2, 4, 8, or 16"
             )
         return beats
     nv = (note_value or "8th").strip().lower()
@@ -46,7 +46,7 @@ def _beats_for_note_value(note_value: Union[int, str]) -> float:
         return TRIPLET_4T_BEATS
     if nv == "16t":
         return TRIPLET_16T_BEATS
-    if nv in ("2", "4", "8", "16"):
+    if nv in ("1", "2", "4", "8", "16"):
         return NUMERIC_TO_BEATS[int(nv)]
     if nv == "8th":
         return 0.5
@@ -71,7 +71,7 @@ def note_duration_seconds(bpm: int, note_value: Union[int, str]) -> float:
     Duration in seconds of one note for the given BPM and note value.
 
     note_value can be:
-    - int: 2=half, 4=quarter, 8=eighth, 16=sixteenth (beats in 4/4)
+    - int: 1=whole, 2=half, 4=quarter, 8=eighth, 16=sixteenth (beats in 4/4)
     - str: "8th", "quarter", "4th", "half", "16th", "8t"/"4t"/"16t" (triplets), etc.
     - str with leading/trailing ~: tie markers (e.g. "4~", "~8t", "~8t~"); ~ is ignored for duration.
     - str with trailing dot: dotted note (e.g. "4." = dotted quarter, "8." = dotted eighth).
