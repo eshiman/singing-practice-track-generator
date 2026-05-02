@@ -84,6 +84,36 @@ exercises:
     pause_between_keys_ms: 2500
 ```
 
+### Repeating specific modulations
+
+You can optionally repeat selected keys in the resolved modulation sequence using `repeated_modulations`.
+Each rule duplicates the matched key immediately after itself, preserving the exact musical content
+(same pitches, durations, and pause handling).
+
+Fields:
+
+- `key` (required) - note name like `E4`
+- `extra_repeats` (required) - integer `>= 0`
+- `which_occurrence` (optional) - integer `>= 1`, defaults to `1`
+
+If a modulation is repeated, spoken feedback is only evaluated on original (non-repeat-copy) modulations.
+Repeat copies never trigger feedback.
+
+```yaml
+exercises:
+  - name: "Pattern with repeated peak key"
+    scale_degrees: [1, 3, 5, 8]
+    modulation_waypoints: ["C#4", "G3", "E4", "C#4"]
+    repeated_modulations:
+      - key: "E4"
+        extra_repeats: 3
+      - key: "D4"
+        extra_repeats: 1
+    bpm: 70
+    note_value: 8th
+    pause_between_keys_ms: 2000
+```
+
 ## Running the script
 
 ```bash

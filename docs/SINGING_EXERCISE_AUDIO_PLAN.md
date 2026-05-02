@@ -72,11 +72,27 @@ exercises:
 
 Exercises can use a **phrase format** with per-note durations, rests, and accidentals. See **docs/new_feature.md** for the full plan. Summary:
 
-- **`note_values`**: Optional list of durations (numeric 2, 4, 8, 16 = half, quarter, eighth, sixteenth; or strings like `"4."` for dotted quarter; `"8t"` / `"4t"` / `"16t"` for eighth / quarter / sixteenth triplets). **Ties:** Preceding note ends with `~` (e.g. `"4~"`), following note starts with `~` (e.g. `"~8t"`); middle of a tie is `"~8t~"`. Tied slots are rendered as one sustained note. When present, length must match `scale_degrees`; each slot gets its own duration.
+- **`note_values`**: Optional list of durations (numeric 1, 2, 4, 8, 16 = whole, half, quarter, eighth, sixteenth; or strings like `"4."` for dotted quarter; `"8t"` / `"4t"` / `"16t"` for eighth / quarter / sixteenth triplets). **Ties:** Preceding note ends with `~` (e.g. `"4~"`), following note starts with `~` (e.g. `"~8t"`); middle of a tie is `"~8t~"`. Tied slots are rendered as one sustained note. When present, length must match `scale_degrees`; each slot gets its own duration.
 - **Rest "R"**: Use `"R"` in `scale_degrees` for a rest; duration comes from `note_values` or from the single `note_value`.
 - **Accidentals**: Write `"b3"` (flat) or `"#5"` (sharp) before the degree. Scale degrees in phrase format are quoted strings: `"1"`–`"8"`, `"R"`, `"b3"`, `"#5"`.
 
 Example: `scale_degrees: ["8", "5", "R", "b3", "1"]` with `note_values: [8, 4, 4, 4, 2]` plays eighth, quarter, rest (quarter), quarter, half in each key.
+
+### 2.5 Chords
+
+A **slot** can be a **chord**: a list of scale degrees played simultaneously. Use a YAML list as one element of `scale_degrees`; that slot then plays all listed degrees at once for the corresponding duration in `note_values`.
+
+- **Format**: `scale_degrees: [[1, 3, 5], [1, "b3", 5]]` — first slot = major triad (1, 3, 5), second = minor triad (1, b3, 5). Each chord is one slot; `note_values` has one entry per slot (e.g. `[4, 4]` = quarter note each).
+- **Accidentals**: Chord tones support accidentals: `[1, "b3", 5]`, `["#5", 8]`, etc.
+- **No rest inside chord**: A chord cannot contain `"R"`; use a separate rest slot if needed.
+- **No nested chords**: Each list in `scale_degrees` is a single chord (flat list of degrees).
+
+Example: major then minor triad, quarter note each, in each key:
+
+```yaml
+scale_degrees: [[1, 3, 5], [1, "b3", 5]]
+note_values: [4, 4]
+```
 
 ---
 

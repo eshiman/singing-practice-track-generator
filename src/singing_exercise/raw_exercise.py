@@ -5,6 +5,7 @@ from typing import Any, Union
 
 import yaml
 
+from .keys import parse_note, note_name
 from .timing import is_tied_from_previous, note_duration_seconds
 
 
@@ -18,6 +19,15 @@ class FeedbackEntry:
 
 
 @dataclass
+class RepeatedModulationRule:
+    """Duplicate a modulation key extra_repeats times for a specific occurrence."""
+
+    key: str
+    extra_repeats: int
+    which_occurrence: int = 1
+
+
+@dataclass
 class RawExercise:
     """Raw exercise definition from YAML (used as input for plan generation)."""
 
@@ -28,6 +38,7 @@ class RawExercise:
     note_value: str
     pause_between_keys_ms: int
     feedback: list[FeedbackEntry]
+    repeated_modulations: list[RepeatedModulationRule]
     demo: bool = False
     note_values: list[Union[int, str]] | None = None  # optional per-slot durations (2,4,8,16 or "8th" etc.)
 
@@ -95,6 +106,42 @@ class RawExercise:
             )
             for entry in feedback_raw
         ]
+        repeated_modulations_raw = data.get("repeated_modulations") or []
+        repeated_modulations: list[RepeatedModulationRule] = []
+        for entry in repeated_modulations_raw:
+            raw_key = (entry.get("key") or "").strip()
+            key = raw_key
+            if not key:
+                raise ValueError("repeated_modulations[].key is required")
+            try:
+                # Validate note syntax early; matching still happens in process phase.
+                pc, octv = parse_note(key)
+                # Normalize enharmonic spellings (e.g. C#4 -> Db4) to match key sequence names.
+                key = note_name(pc, octv)
+            except ValueError as exc:
+                raise ValueError(f"Invalid repeated_modulations key: {raw_key!r}") from exc
+
+            if "extra_repeats" not in entry:
+                raise ValueError(f"repeated_modulations[{key}].extra_repeats is required")
+            extra_repeats = int(entry["extra_repeats"])
+            if extra_repeats < 0:
+                raise ValueError(
+                    f"repeated_modulations[{key}].extra_repeats must be >= 0, got {extra_repeats}"
+                )
+
+            which_occurrence = int(entry.get("which_occurrence", 1))
+            if which_occurrence < 1:
+                raise ValueError(
+                    f"repeated_modulations[{key}].which_occurrence must be >= 1, got {which_occurrence}"
+                )
+
+            repeated_modulations.append(
+                RepeatedModulationRule(
+                    key=key,
+                    extra_repeats=extra_repeats,
+                    which_occurrence=which_occurrence,
+                )
+            )
         scale_degrees = data.get("scale_degrees", [])
         note_values = data.get("note_values")
         if note_values is not None and len(note_values) != len(scale_degrees):
@@ -109,6 +156,7 @@ class RawExercise:
             note_value=data.get("note_value", "8th"),
             pause_between_keys_ms=data.get("pause_between_keys_ms", 2000),
             feedback=feedback,
+            repeated_modulations=repeated_modulations,
             demo=bool(data.get("demo", False)),
             note_values=note_values,
         )
