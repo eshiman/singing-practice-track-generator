@@ -91,3 +91,28 @@ def waypoints_to_key_sequence(waypoints: List[str]) -> List[Tuple[int, int]]:
 def key_sequence_to_names(keys: List[Tuple[int, int]]) -> List[str]:
     """Convert list of (pitch_class, octave) to note name strings."""
     return [note_name(pc, oct) for pc, oct in keys]
+
+
+def offsets_to_offset_sequence(offsets: List[int]) -> List[int]:
+    """
+    Resolve modulation offset waypoints to a full offset sequence.
+    Between consecutive offsets we step by one semitone (up or down).
+    Waypoints are not duplicated at boundaries (same rule as waypoints_to_key_sequence).
+    """
+    if not offsets:
+        return []
+    if len(offsets) == 1:
+        return [offsets[0]]
+
+    result: List[int] = []
+    for i in range(len(offsets) - 1):
+        from_off = offsets[i]
+        to_off = offsets[i + 1]
+        if from_off <= to_off:
+            off_list = list(range(from_off, to_off + 1))
+        else:
+            off_list = list(range(from_off, to_off - 1, -1))
+        start = 1 if i > 0 else 0
+        for off in off_list[start:]:
+            result.append(off)
+    return result

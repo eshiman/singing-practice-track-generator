@@ -86,13 +86,10 @@ class RawExercise:
 
         Returns (list of RawExercise, pause_between_exercises_ms).
         """
-        with open(path, encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-        if not data or "exercises" not in data:
-            return [], 3000
-        exercises = [cls.from_dict(ex) for ex in data["exercises"]]
-        pause_ms = int(data.get("pause_between_exercises_ms", 3000))
-        return exercises, pause_ms
+        from .session import load_session_from_yaml_path
+
+        session = load_session_from_yaml_path(path)
+        return session.exercises, session.pause_between_exercises_ms
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "RawExercise":

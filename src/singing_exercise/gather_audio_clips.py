@@ -18,7 +18,7 @@ def gather_audio_clips(
     sequence: List[dict],
     clip_dir: Path,
     *,
-    soundfont_path: Path,
+    soundfont_path: Path | None,
     sample_rate: int = 44100,
     music_volume_db: float = 0.0,
     tts_volume_db: float = -6.0,
@@ -37,6 +37,8 @@ def gather_audio_clips(
     for i, item in enumerate(sequence):
         kind = item.get("type")
         if kind == "piano":
+            if soundfont_path is None:
+                raise ValueError("soundfont_path is required for piano segments")
             midi_bytes = item["midi"]
             out_path = clip_dir / f"piano_{i}.wav"
             midi_to_wav(midi_bytes, soundfont_path, out_path, sample_rate, gain=gain)

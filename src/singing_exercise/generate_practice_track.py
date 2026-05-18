@@ -16,7 +16,10 @@ from .render_wav import concatenate_wavs
 from .render_midi import modulation_to_midi_bytes
 from .raw_exercise import RawExercise
 from .process_exercise import expand_exercise_to_modulations, feedback_after_modulation
+from .process_youtube_clip import expand_clip_to_offsets
 from .record_demo import record_demo
+from .session import load_session_from_yaml_path
+from .youtube_audio import prepare_trimmed_clip, render_clip_at_offset
 
 logger = logging.getLogger(__name__)
 
@@ -53,10 +56,29 @@ def _exercise_to_sequence(exercise: RawExercise) -> list:
     return _build_sequence(exercise, modulations, modulations_midi)
 
 
+def _youtube_clip_to_sequence(
+    clip_index: int,
+    clip,
+    offsets: list[int],
+    clip_dir: Path,
+    trimmed,
+    sample_rate: int,
+) -> list:
+    """Build audio + silence segments for one YouTube clip's modulation passes."""
+    sequence = []
+    for j, semitones in enumerate(offsets):
+        out_path = clip_dir / f"ytclip_{clip_index}_off_{j}_{semitones}.wav"
+        render_clip_at_offset(trimmed, semitones, out_path, sample_rate)
+        sequence.append({"type": "audio", "path": out_path})
+        if j < len(offsets) - 1 and clip.pause_between_keys_ms > 0:
+            sequence.append({"type": "silence", "ms": clip.pause_between_keys_ms})
+    return sequence
+
+
 def generate_practice_track(
     yaml_path: Path,
     output_path: Path,
-    soundfont_path: Path,
+    soundfont_path: Path | None,
     sample_rate: int = 44100,
     tts_volume_db: float | None = None,
     music_volume_db: float | None = None,
@@ -64,9 +86,9 @@ def generate_practice_track(
     """
     Load a session from YAML and render to one WAV.
 
-    The YAML must be a session file (top-level "exercises" list). All exercises
-    are rendered in order into one long WAV, separated by pause_between_exercises_ms
-    (default 3000 ms).
+    Session YAML may include exercises and/or youtube_clips. All exercises are
+    rendered first (in order), then all YouTube clips. Exercises are separated
+    by pause_between_exercises_ms (default 3000 ms).
 
     tts_volume_db / music_volume_db: when None, use values from config (see config.yaml).
     """
@@ -74,9 +96,15 @@ def generate_practice_track(
     tts_db = tts_volume_db if tts_volume_db is not None else config["tts_volume_db"]
     music_db = music_volume_db if music_volume_db is not None else config["music_volume_db"]
 
-    exercises, pause_between_exercises_ms = RawExercise.load_all_from_yaml_path(yaml_path)
-    if not exercises:
-        raise ValueError(f"No exercises in YAML: {yaml_path}")
+    session = load_session_from_yaml_path(yaml_path)
+    exercises = session.exercises
+    youtube_clips = session.youtube_clips
+    pause_between_exercises_ms = session.pause_between_exercises_ms
+
+    if not exercises and not youtube_clips:
+        raise ValueError(f"No exercises or youtube_clips in YAML: {yaml_path}")
+    if exercises and (soundfont_path is None or not soundfont_path.exists()):
+        raise ValueError("A soundfont is required when the session includes exercises.")
 
     # Build one combined sequence: [ex1 modulations..., silence, ex2 modulations..., silence, ...]
     # For exercises with demo=True, record a voice demo first and prepend it (with a short silence).
@@ -86,10 +114,10 @@ def generate_practice_track(
         # full_sequence is the fully expanded processed exercise sequence, that includes
         # the step by steps of what to generate
         full_sequence = []
+
         for i, exercise in enumerate(exercises):
             if exercise.demo:
-                demo_path = clip_dir / f"demo_{i}.wav"
-                # recording all the demos before other audio is generated, so that we front-load any required user input
+                demo_path = clip_dir / f"demo_ex_{i}.wav"
                 first_waypoint = exercise.modulation_waypoints[0] if exercise.modulation_waypoints else None
                 record_demo(
                     exercise.name,
@@ -106,6 +134,25 @@ def generate_practice_track(
             full_sequence.extend(seq)
             if i < len(exercises) - 1 and pause_between_exercises_ms > 0:
                 full_sequence.append({"type": "silence", "ms": pause_between_exercises_ms})
+
+        # Front-load YouTube clip demos (no starting-key triad).
+        for i, clip in enumerate(youtube_clips):
+            if clip.demo:
+                demo_path = clip_dir / f"demo_yt_{i}.wav"
+                record_demo(clip.name, demo_path, sample_rate, first_modulation_waypoint=None)
+                full_sequence.append({"type": "audio", "path": demo_path})
+                full_sequence.append({"type": "silence", "ms": 1500})
+
+        for i, clip in enumerate(youtube_clips):
+            offsets = expand_clip_to_offsets(clip)
+            if not offsets:
+                logger.warning("YouTube clip %r has no modulation passes; skipping.", clip.name)
+                continue
+            logger.info("Preparing YouTube clip %r (%d passes)...", clip.name, len(offsets))
+            trimmed = prepare_trimmed_clip(clip, clip_dir / "youtube_cache")
+            full_sequence.extend(
+                _youtube_clip_to_sequence(i, clip, offsets, clip_dir, trimmed, sample_rate)
+            )
 
         if not full_sequence:
             logger.warning("No modulations from any exercise; output will be empty.")
@@ -173,13 +220,17 @@ def main() -> None:
         logger.error("File not found: %s", args.yaml_path)
         sys.exit(1)
 
+    from .session import load_session_from_yaml_path as _load_session
+
+    session = _load_session(args.yaml_path)
     soundfont = args.soundfont or (os.environ.get("SOUNDFONT") and Path(os.environ["SOUNDFONT"]))
-    if not soundfont or not Path(soundfont).exists():
-        logger.error(
-            "Soundfont required. Set SOUNDFONT env or pass --soundfont path/to/piano.sf2"
-        )
-        sys.exit(1)
-    soundfont_path = Path(soundfont)
+    soundfont_path = Path(soundfont) if soundfont else None
+    if session.exercises:
+        if not soundfont_path or not soundfont_path.exists():
+            logger.error(
+                "Soundfont required for exercises. Set SOUNDFONT env or pass --soundfont path/to/piano.sf2"
+            )
+            sys.exit(1)
 
     output = args.output
     if output is None:
