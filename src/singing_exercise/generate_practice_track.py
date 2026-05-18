@@ -90,7 +90,13 @@ def generate_practice_track(
             if exercise.demo:
                 demo_path = clip_dir / f"demo_{i}.wav"
                 # recording all the demos before other audio is generated, so that we front-load any required user input
-                record_demo(exercise.name, demo_path, sample_rate)
+                first_waypoint = exercise.modulation_waypoints[0] if exercise.modulation_waypoints else None
+                record_demo(
+                    exercise.name,
+                    demo_path,
+                    sample_rate,
+                    first_modulation_waypoint=first_waypoint,
+                )
                 full_sequence.append({"type": "audio", "path": demo_path})
                 full_sequence.append({"type": "silence", "ms": 1500})
             seq = _exercise_to_sequence(exercise)

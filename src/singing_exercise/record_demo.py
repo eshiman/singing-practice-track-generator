@@ -4,6 +4,7 @@ Used when an exercise has demo=True: the recording is inserted before the exerci
 Prompts for Enter when ready to start, then Enter again when done. Uses PyAudio and wave.
 """
 import logging
+import math
 import sys
 import threading
 import time
@@ -13,6 +14,8 @@ from struct import pack
 
 import pyaudio
 import wave
+
+from .keys import parse_note, note_to_midi
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +65,61 @@ def add_silence(snd_data: array, seconds: float) -> array:
     return r
 
 
-def record_demo(exercise_name: str, output_path: Path, sample_rate: int = RATE) -> Path:
+def _midi_to_hz(midi: int) -> float:
+    return 440.0 * (2.0 ** ((midi - 69) / 12.0))
+
+
+def _play_major_triad_cue(
+    key_name: str,
+    duration_sec: float = 1.0,
+    sample_rate: int = RATE,
+) -> None:
+    """
+    Play a short major-triad cue rooted at key_name through default output.
+    """
+    pc, octv = parse_note(key_name)
+    root_midi = note_to_midi(pc, octv)
+    freqs = [_midi_to_hz(root_midi + interval) for interval in (0, 4, 7)]
+    n_samples = max(1, int(sample_rate * duration_sec))
+    fade_len = max(1, int(sample_rate * 0.03))
+    amplitude = 0.25
+
+    samples = array("h")
+    for i in range(n_samples):
+        t = i / sample_rate
+        sample = sum(math.sin(2 * math.pi * freq * t) for freq in freqs) / len(freqs)
+
+        # Short fade-in/out prevents clicks at the boundaries.
+        env = 1.0
+        if i < fade_len:
+            env = i / fade_len
+        elif i > n_samples - fade_len:
+            env = max(0.0, (n_samples - i) / fade_len)
+
+        value = int(max(-1.0, min(1.0, sample * amplitude * env)) * 32767)
+        samples.append(value)
+
+    p = pyaudio.PyAudio()
+    stream = p.open(
+        format=FORMAT,
+        channels=CHANNELS,
+        rate=sample_rate,
+        output=True,
+    )
+    try:
+        stream.write(samples.tobytes())
+    finally:
+        stream.stop_stream()
+        stream.close()
+        p.terminate()
+
+
+def record_demo(
+    exercise_name: str,
+    output_path: Path,
+    sample_rate: int = RATE,
+    first_modulation_waypoint: str | None = None,
+) -> Path:
     """
     Prompt the user to press Enter when ready, then record from the default microphone until they press Enter again,
     and save as WAV at output_path. Returns output_path.
@@ -73,6 +130,13 @@ def record_demo(exercise_name: str, output_path: Path, sample_rate: int = RATE) 
         raise ValueError(f"record_demo expects sample_rate={RATE}, got {sample_rate}")
     output_path = Path(output_path).resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if first_modulation_waypoint:
+        print(f'Playing starting-key triad cue: {first_modulation_waypoint}', flush=True)
+        try:
+            _play_major_triad_cue(first_modulation_waypoint, sample_rate=sample_rate)
+        except Exception:
+            logger.exception("Failed to play starting-key triad cue; continuing.")
 
     print(f'Record a demo for "{exercise_name}". Press Enter when ready to start.', flush=True)
     sys.stdout.flush()
