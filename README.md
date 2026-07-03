@@ -9,6 +9,7 @@ I did this using Homebrew on macos:
 
 ```bash
 brew install fluid-synth
+brew install rubberband
 ```
 
 **Python:**

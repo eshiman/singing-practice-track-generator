@@ -16,10 +16,10 @@ from .render_wav import concatenate_wavs
 from .render_midi import modulation_to_midi_bytes
 from .raw_exercise import RawExercise
 from .process_exercise import expand_exercise_to_modulations, feedback_after_modulation
+from .process_audio_clip import expand_audio_clip_to_offsets
 from .process_youtube_clip import expand_clip_to_offsets
 from .record_demo import record_demo
 from .session import load_session_from_yaml_path
-from .youtube_audio import prepare_trimmed_clip, render_clip_at_offset
 
 logger = logging.getLogger(__name__)
 
@@ -65,9 +65,30 @@ def _youtube_clip_to_sequence(
     sample_rate: int,
 ) -> list:
     """Build audio + silence segments for one YouTube clip's modulation passes."""
+    from .youtube_audio import render_clip_at_offset
     sequence = []
     for j, semitones in enumerate(offsets):
         out_path = clip_dir / f"ytclip_{clip_index}_off_{j}_{semitones}.wav"
+        render_clip_at_offset(trimmed, semitones, out_path, sample_rate)
+        sequence.append({"type": "audio", "path": out_path})
+        if j < len(offsets) - 1 and clip.pause_between_keys_ms > 0:
+            sequence.append({"type": "silence", "ms": clip.pause_between_keys_ms})
+    return sequence
+
+
+def _audio_clip_to_sequence(
+    clip_index: int,
+    clip,
+    offsets: list[int],
+    clip_dir: Path,
+    trimmed,
+    sample_rate: int,
+) -> list:
+    """Build audio + silence segments for one local audio clip's modulation passes."""
+    from .youtube_audio import render_clip_at_offset
+    sequence = []
+    for j, semitones in enumerate(offsets):
+        out_path = clip_dir / f"audioclip_{clip_index}_off_{j}_{semitones}.wav"
         render_clip_at_offset(trimmed, semitones, out_path, sample_rate)
         sequence.append({"type": "audio", "path": out_path})
         if j < len(offsets) - 1 and clip.pause_between_keys_ms > 0:
@@ -99,10 +120,15 @@ def generate_practice_track(
     session = load_session_from_yaml_path(yaml_path)
     exercises = session.exercises
     youtube_clips = session.youtube_clips
+    audio_clips = session.audio_clips
     pause_between_exercises_ms = session.pause_between_exercises_ms
 
-    if not exercises and not youtube_clips:
-        raise ValueError(f"No exercises or youtube_clips in YAML: {yaml_path}")
+    # Locate the audio/ folder relative to the repo root (same pattern as config.py).
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    audio_folder = repo_root / "audio"
+
+    if not exercises and not youtube_clips and not audio_clips:
+        raise ValueError(f"No exercises, youtube_clips, or audio_clips in YAML: {yaml_path}")
     if exercises and (soundfont_path is None or not soundfont_path.exists()):
         raise ValueError("A soundfont is required when the session includes exercises.")
 
@@ -149,9 +175,30 @@ def generate_practice_track(
                 logger.warning("YouTube clip %r has no modulation passes; skipping.", clip.name)
                 continue
             logger.info("Preparing YouTube clip %r (%d passes)...", clip.name, len(offsets))
+            from .youtube_audio import prepare_trimmed_clip
             trimmed = prepare_trimmed_clip(clip, clip_dir / "youtube_cache")
             full_sequence.extend(
                 _youtube_clip_to_sequence(i, clip, offsets, clip_dir, trimmed, sample_rate)
+            )
+
+        # Front-load audio clip demos (no starting-key triad).
+        for i, clip in enumerate(audio_clips):
+            if clip.demo:
+                demo_path = clip_dir / f"demo_ac_{i}.wav"
+                record_demo(clip.name, demo_path, sample_rate, first_modulation_waypoint=None)
+                full_sequence.append({"type": "audio", "path": demo_path})
+                full_sequence.append({"type": "silence", "ms": 1500})
+
+        for i, clip in enumerate(audio_clips):
+            offsets = expand_audio_clip_to_offsets(clip)
+            if not offsets:
+                logger.warning("Audio clip %r has no modulation passes; skipping.", clip.name)
+                continue
+            logger.info("Preparing audio clip %r (%d passes)...", clip.name, len(offsets))
+            from .youtube_audio import prepare_trimmed_audio_clip
+            trimmed = prepare_trimmed_audio_clip(clip, audio_folder, clip_dir / "audio_cache")
+            full_sequence.extend(
+                _audio_clip_to_sequence(i, clip, offsets, clip_dir, trimmed, sample_rate)
             )
 
         if not full_sequence:
