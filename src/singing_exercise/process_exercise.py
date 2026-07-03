@@ -80,11 +80,9 @@ def feedback_after_modulation(
     Returns list of length len(modulations); each element is a list of text strings (may be empty).
     """
     result: list[list[str]] = [[] for _ in modulations]
-    # Count occurrences of each key as we walk modulations
+    # Count occurrences of each key as we walk modulations (repeat copies count too)
     occurrence: dict[str, int] = {}
     for i, mod in enumerate(modulations):
-        if mod.get("is_repeat_copy"):
-            continue
         key_name = mod["key_name"]
         occurrence[key_name] = occurrence.get(key_name, 0) + 1
         for fb in feedback_list:
