@@ -56,15 +56,15 @@ def _text_to_wav_say(
         aiff_path = tmp / "speech.aiff"
         text_file.write_text(text, encoding="utf-8")
 
-        # Request target sample rate so we avoid resampling and crackly audio
+        # macOS 26+ broke the no-voice default for file output; always specify one.
+        effective_voice = voice or "Ava (Enhanced)"
         cmd = [
             "say",
+            "-v", effective_voice,
             "-o", str(aiff_path),
             "--data-format", f"BEI16@{sample_rate}",
             "-f", str(text_file),
         ]
-        if voice:
-            cmd.extend(["-v", voice])
         subprocess.run(cmd, check=True, capture_output=True, text=True)
 
         seg = AudioSegment.from_file(str(aiff_path), format="aiff")
