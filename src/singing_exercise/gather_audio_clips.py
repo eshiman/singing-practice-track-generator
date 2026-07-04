@@ -3,6 +3,7 @@ Gather WAV clips from a sequence of descriptors.
 Uses render_wav (MIDI, silence), generate_voice (TTS), and resamples audio clips.
 Caller owns the clip_dir and must call concatenate_wavs after gathering.
 """
+import logging
 from pathlib import Path
 from typing import List
 
@@ -12,6 +13,8 @@ from .render_wav import (
     midi_to_wav,
     silence_wav,
 )
+
+logger = logging.getLogger(__name__)
 
 
 def gather_audio_clips(
@@ -52,13 +55,18 @@ def gather_audio_clips(
         elif kind == "tts":
             text = item.get("text", "")
             out_path = clip_dir / f"tts_{i}.wav"
-            generate_voice.text_to_wav(
-                text,
-                out_path,
-                normalize=True,
-                sample_rate=sample_rate,
-                target_dbfs=tts_volume_db,
-            )
+            try:
+                generate_voice.text_to_wav(
+                    text,
+                    out_path,
+                    normalize=True,
+                    sample_rate=sample_rate,
+                    target_dbfs=tts_volume_db,
+                )
+            except Exception as exc:
+                logger.error("TTS generation failed for %r: %s", text, exc)
+                silence = silence_wav(500, sample_rate)
+                silence.export(str(out_path), format="wav")
             ordered.append(out_path)
         elif kind == "audio":
             from pydub import AudioSegment

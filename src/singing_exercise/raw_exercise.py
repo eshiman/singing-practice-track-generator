@@ -95,14 +95,19 @@ class RawExercise:
     def from_dict(cls, data: dict[str, Any]) -> "RawExercise":
         """Build RawExercise from dict. Parses feedback list when present."""
         feedback_raw = data.get("feedback") or []
-        feedback = [
-            FeedbackEntry(
-                key=entry.get("key", ""),
+        feedback = []
+        for entry in feedback_raw:
+            raw_key = (entry.get("key") or "").strip()
+            try:
+                pc, octv = parse_note(raw_key)
+                normalized_key = note_name(pc, octv)
+            except ValueError as exc:
+                raise ValueError(f"Invalid feedback key: {raw_key!r}") from exc
+            feedback.append(FeedbackEntry(
+                key=normalized_key,
                 which_occurrence=int(entry.get("which_occurrence", 1)),
                 text=(entry.get("text") or "").strip(),
-            )
-            for entry in feedback_raw
-        ]
+            ))
         repeated_modulations_raw = data.get("repeated_modulations") or []
         repeated_modulations: list[RepeatedModulationRule] = []
         for entry in repeated_modulations_raw:

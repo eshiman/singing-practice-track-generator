@@ -69,7 +69,13 @@ def _youtube_clip_to_sequence(
     sequence = []
     for j, semitones in enumerate(offsets):
         out_path = clip_dir / f"ytclip_{clip_index}_off_{j}_{semitones}.wav"
-        render_clip_at_offset(trimmed, semitones, out_path, sample_rate)
+        try:
+            render_clip_at_offset(trimmed, semitones, out_path, sample_rate)
+        except Exception as exc:
+            logger.error(
+                "YouTube clip %r offset %+d failed: %s", clip.name, semitones, exc
+            )
+            continue
         sequence.append({"type": "audio", "path": out_path})
         if j < len(offsets) - 1 and clip.pause_between_keys_ms > 0:
             sequence.append({"type": "silence", "ms": clip.pause_between_keys_ms})
@@ -89,7 +95,13 @@ def _audio_clip_to_sequence(
     sequence = []
     for j, semitones in enumerate(offsets):
         out_path = clip_dir / f"audioclip_{clip_index}_off_{j}_{semitones}.wav"
-        render_clip_at_offset(trimmed, semitones, out_path, sample_rate)
+        try:
+            render_clip_at_offset(trimmed, semitones, out_path, sample_rate)
+        except Exception as exc:
+            logger.error(
+                "Audio clip %r offset %+d failed: %s", clip.name, semitones, exc
+            )
+            continue
         sequence.append({"type": "audio", "path": out_path})
         if j < len(offsets) - 1 and clip.pause_between_keys_ms > 0:
             sequence.append({"type": "silence", "ms": clip.pause_between_keys_ms})
@@ -107,8 +119,8 @@ def generate_practice_track(
     """
     Load a session from YAML and render to one WAV.
 
-    Session YAML may include exercises and/or youtube_clips. All exercises are
-    rendered first (in order), then all YouTube clips. Exercises are separated
+    Session YAML may include exercises, youtube_clips, and/or audio_clips. Sections
+    are rendered in the order they appear in the YAML file. Exercises are separated
     by pause_between_exercises_ms (default 3000 ms).
 
     tts_volume_db / music_volume_db: when None, use values from config (see config.yaml).
@@ -141,65 +153,67 @@ def generate_practice_track(
         # the step by steps of what to generate
         full_sequence = []
 
-        for i, exercise in enumerate(exercises):
-            if exercise.demo:
-                demo_path = clip_dir / f"demo_ex_{i}.wav"
-                first_waypoint = exercise.modulation_waypoints[0] if exercise.modulation_waypoints else None
-                record_demo(
-                    exercise.name,
-                    demo_path,
-                    sample_rate,
-                    first_modulation_waypoint=first_waypoint,
-                )
-                full_sequence.append({"type": "audio", "path": demo_path})
-                full_sequence.append({"type": "silence", "ms": 1500})
-            seq = _exercise_to_sequence(exercise)
-            if not seq:
-                logger.warning("Exercise %r has no modulations; skipping.", exercise.name)
-                continue
-            full_sequence.extend(seq)
-            if i < len(exercises) - 1 and pause_between_exercises_ms > 0:
-                full_sequence.append({"type": "silence", "ms": pause_between_exercises_ms})
+        for section in session.item_order:
+            if section == "exercises":
+                for i, exercise in enumerate(exercises):
+                    if exercise.demo:
+                        demo_path = clip_dir / f"demo_ex_{i}.wav"
+                        first_waypoint = exercise.modulation_waypoints[0] if exercise.modulation_waypoints else None
+                        record_demo(
+                            exercise.name,
+                            demo_path,
+                            sample_rate,
+                            first_modulation_waypoint=first_waypoint,
+                        )
+                        full_sequence.append({"type": "audio", "path": demo_path})
+                        full_sequence.append({"type": "silence", "ms": 1500})
+                    seq = _exercise_to_sequence(exercise)
+                    if not seq:
+                        logger.warning("Exercise %r has no modulations; skipping.", exercise.name)
+                        continue
+                    full_sequence.extend(seq)
+                    if i < len(exercises) - 1 and pause_between_exercises_ms > 0:
+                        full_sequence.append({"type": "silence", "ms": pause_between_exercises_ms})
 
-        # Front-load YouTube clip demos (no starting-key triad).
-        for i, clip in enumerate(youtube_clips):
-            if clip.demo:
-                demo_path = clip_dir / f"demo_yt_{i}.wav"
-                record_demo(clip.name, demo_path, sample_rate, first_modulation_waypoint=None)
-                full_sequence.append({"type": "audio", "path": demo_path})
-                full_sequence.append({"type": "silence", "ms": 1500})
+            elif section == "youtube_clips":
+                # Front-load YouTube clip demos (no starting-key triad).
+                for i, clip in enumerate(youtube_clips):
+                    if clip.demo:
+                        demo_path = clip_dir / f"demo_yt_{i}.wav"
+                        record_demo(clip.name, demo_path, sample_rate, first_modulation_waypoint=None)
+                        full_sequence.append({"type": "audio", "path": demo_path})
+                        full_sequence.append({"type": "silence", "ms": 1500})
+                for i, clip in enumerate(youtube_clips):
+                    offsets = expand_clip_to_offsets(clip)
+                    if not offsets:
+                        logger.warning("YouTube clip %r has no modulation passes; skipping.", clip.name)
+                        continue
+                    logger.info("Preparing YouTube clip %r (%d passes)...", clip.name, len(offsets))
+                    from .youtube_audio import prepare_trimmed_clip
+                    trimmed = prepare_trimmed_clip(clip, clip_dir / "youtube_cache")
+                    full_sequence.extend(
+                        _youtube_clip_to_sequence(i, clip, offsets, clip_dir, trimmed, sample_rate)
+                    )
 
-        for i, clip in enumerate(youtube_clips):
-            offsets = expand_clip_to_offsets(clip)
-            if not offsets:
-                logger.warning("YouTube clip %r has no modulation passes; skipping.", clip.name)
-                continue
-            logger.info("Preparing YouTube clip %r (%d passes)...", clip.name, len(offsets))
-            from .youtube_audio import prepare_trimmed_clip
-            trimmed = prepare_trimmed_clip(clip, clip_dir / "youtube_cache")
-            full_sequence.extend(
-                _youtube_clip_to_sequence(i, clip, offsets, clip_dir, trimmed, sample_rate)
-            )
-
-        # Front-load audio clip demos (no starting-key triad).
-        for i, clip in enumerate(audio_clips):
-            if clip.demo:
-                demo_path = clip_dir / f"demo_ac_{i}.wav"
-                record_demo(clip.name, demo_path, sample_rate, first_modulation_waypoint=None)
-                full_sequence.append({"type": "audio", "path": demo_path})
-                full_sequence.append({"type": "silence", "ms": 1500})
-
-        for i, clip in enumerate(audio_clips):
-            offsets = expand_audio_clip_to_offsets(clip)
-            if not offsets:
-                logger.warning("Audio clip %r has no modulation passes; skipping.", clip.name)
-                continue
-            logger.info("Preparing audio clip %r (%d passes)...", clip.name, len(offsets))
-            from .youtube_audio import prepare_trimmed_audio_clip
-            trimmed = prepare_trimmed_audio_clip(clip, audio_folder, clip_dir / "audio_cache")
-            full_sequence.extend(
-                _audio_clip_to_sequence(i, clip, offsets, clip_dir, trimmed, sample_rate)
-            )
+            elif section == "audio_clips":
+                # Front-load audio clip demos (no starting-key triad).
+                for i, clip in enumerate(audio_clips):
+                    if clip.demo:
+                        demo_path = clip_dir / f"demo_ac_{i}.wav"
+                        record_demo(clip.name, demo_path, sample_rate, first_modulation_waypoint=None)
+                        full_sequence.append({"type": "audio", "path": demo_path})
+                        full_sequence.append({"type": "silence", "ms": 1500})
+                for i, clip in enumerate(audio_clips):
+                    offsets = expand_audio_clip_to_offsets(clip)
+                    if not offsets:
+                        logger.warning("Audio clip %r has no modulation passes; skipping.", clip.name)
+                        continue
+                    logger.info("Preparing audio clip %r (%d passes)...", clip.name, len(offsets))
+                    from .youtube_audio import prepare_trimmed_audio_clip
+                    trimmed = prepare_trimmed_audio_clip(clip, audio_folder, clip_dir / "audio_cache")
+                    full_sequence.extend(
+                        _audio_clip_to_sequence(i, clip, offsets, clip_dir, trimmed, sample_rate)
+                    )
 
         if not full_sequence:
             logger.warning("No modulations from any exercise; output will be empty.")
