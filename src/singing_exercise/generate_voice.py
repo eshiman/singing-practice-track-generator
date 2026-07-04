@@ -65,9 +65,23 @@ def _text_to_wav_say(
             "--data-format", f"BEI16@{sample_rate}",
             "-f", str(text_file),
         ]
-        subprocess.run(cmd, check=True, capture_output=True, text=True)
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        if result.stderr:
+            logger.warning("say stderr for voice %r: %s", effective_voice, result.stderr.strip())
+
+        if not aiff_path.exists() or aiff_path.stat().st_size < 1000:
+            raise RuntimeError(
+                f"say produced no output for voice {effective_voice!r} "
+                f"(file size: {aiff_path.stat().st_size if aiff_path.exists() else 0} bytes). "
+                "The voice may not be installed — check System Settings > Accessibility > Spoken Content."
+            )
 
         seg = AudioSegment.from_file(str(aiff_path), format="aiff")
+        if len(seg) < 100:
+            raise RuntimeError(
+                f"say produced only {len(seg)}ms of audio for voice {effective_voice!r}. "
+                "The voice may be broken or not fully installed."
+            )
         if seg.frame_rate != sample_rate:
             seg = seg.set_frame_rate(sample_rate)
         if normalize and seg.dBFS > -40:
