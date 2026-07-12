@@ -25,6 +25,22 @@ def _yt_dlp_executable() -> list[str]:
     return [sys.executable, "-m", "yt_dlp"]
 
 
+def _build_yt_dlp_cmd(link: str, output_template: str, browser: str | None = None) -> list[str]:
+    cmd = [
+        *_yt_dlp_executable(),
+        "-x",
+        "--audio-format", "wav",
+        "-o", output_template,
+        "--no-playlist",
+        "--quiet",
+        "--no-warnings",
+    ]
+    if browser:
+        cmd += ["--cookies-from-browser", browser]
+    cmd.append(link)
+    return cmd
+
+
 def download_youtube_audio(link: str, output_dir: Path) -> Path:
     """
     Download best available audio from a YouTube URL as WAV in output_dir.
@@ -33,28 +49,37 @@ def download_youtube_audio(link: str, output_dir: Path) -> Path:
     output_dir = Path(output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
     output_template = str(output_dir / "source.%(ext)s")
-    cmd = [
-        *_yt_dlp_executable(),
-        "-x",
-        "--audio-format",
-        "wav",
-        "-o",
-        output_template,
-        "--no-playlist",
-        "--quiet",
-        "--no-warnings",
-        link,
-    ]
+
+    # Try without cookies first, then fall back to common browsers.
+    browsers_to_try: list[str | None] = [None, "chrome", "safari", "firefox"]
+    last_exc: subprocess.CalledProcessError | None = None
     logger.info("Downloading audio from YouTube...")
-    try:
-        subprocess.run(cmd, check=True, capture_output=True, text=True)
-    except subprocess.CalledProcessError as exc:
-        stderr = (exc.stderr or exc.stdout or "").strip()
+    for browser in browsers_to_try:
+        cmd = _build_yt_dlp_cmd(link, output_template, browser)
+        try:
+            subprocess.run(cmd, check=True, capture_output=True, text=True)
+            last_exc = None
+            break
+        except subprocess.CalledProcessError as exc:
+            last_exc = exc
+            stderr = (exc.stderr or exc.stdout or "").strip()
+            if "Sign in to confirm" in stderr or "bot" in stderr.lower():
+                logger.debug("yt-dlp needs auth (browser=%s), retrying with next browser", browser)
+                continue
+            # Non-auth error — don't retry
+            raise RuntimeError(
+                "yt-dlp failed to download audio. Install yt-dlp "
+                "(pip install yt-dlp or brew install yt-dlp)."
+                + (f" Details: {stderr}" if stderr else "")
+            ) from exc
+
+    if last_exc is not None:
+        stderr = (last_exc.stderr or last_exc.stdout or "").strip()
         raise RuntimeError(
-            "yt-dlp failed to download audio. Install yt-dlp "
-            "(pip install yt-dlp or brew install yt-dlp)."
+            "yt-dlp failed: YouTube requires sign-in. Make sure Chrome, Safari, or Firefox "
+            "is installed and you are logged in to YouTube in that browser. "
             + (f" Details: {stderr}" if stderr else "")
-        ) from exc
+        ) from last_exc
 
     wav_files = sorted(output_dir.glob("source.*"))
     if not wav_files:

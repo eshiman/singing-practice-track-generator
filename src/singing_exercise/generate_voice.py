@@ -57,7 +57,7 @@ def _text_to_wav_say(
         text_file.write_text(text, encoding="utf-8")
 
         # macOS 26+ broke the no-voice default for file output; always specify one.
-        effective_voice = voice or "Ava (Enhanced)"
+        effective_voice = voice or "Samantha (Enhanced)"
         cmd = [
             "say",
             "-v", effective_voice,
