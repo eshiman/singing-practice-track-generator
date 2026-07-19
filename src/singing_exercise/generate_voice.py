@@ -57,12 +57,14 @@ def _text_to_wav_say(
         text_file.write_text(text, encoding="utf-8")
 
         # macOS 26+ broke the no-voice default for file output; always specify one.
-        effective_voice = voice or "Samantha (Enhanced)"
+        effective_voice = voice or "Zoe (Premium)"
+        # No sample rate in --data-format: forcing a rate that differs from the
+        # voice's native one makes `say` rush/garble sections; pydub resamples below.
         cmd = [
             "say",
             "-v", effective_voice,
             "-o", str(aiff_path),
-            "--data-format", f"BEI16@{sample_rate}",
+            "--data-format", "BEI16",
             "-f", str(text_file),
         ]
         result = subprocess.run(cmd, check=True, capture_output=True, text=True)
@@ -85,7 +87,7 @@ def _text_to_wav_say(
         if seg.frame_rate != sample_rate:
             seg = seg.set_frame_rate(sample_rate)
         if normalize and seg.dBFS > -40:
-            change = target_dbfs - seg.dBFS
+            change = target_dbfs - seg.max_dBFS
             seg = seg.apply_gain(change)
         seg.export(str(output_path), format="wav")
 

@@ -1,6 +1,6 @@
 # Volume (dB). Lower = quieter.
 # tts_volume_db applies to spoken feedback when the exercise has a feedback section.
-tts_volume_db: -20
+tts_volume_db: 0
 # music_volume_db applies to the piano segments.
 # For some reason, the initial volume is pretty low so we need to amp it up a bunch
 music_volume_db: 20
