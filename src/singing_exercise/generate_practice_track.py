@@ -257,13 +257,11 @@ def generate_practice_track(
                         full_sequence.append({"type": "silence", "ms": pause_between_exercises_ms})
 
             elif section == "youtube_clips":
-                # Front-load YouTube clip demos (no starting-key triad).
                 for i, clip in enumerate(youtube_clips):
                     if clip.demo:
                         demo_path = _demo_cache_path(clip.name, None, recordings_dir)
                         full_sequence.append({"type": "audio", "path": demo_path})
                         full_sequence.append({"type": "silence", "ms": 1500})
-                for i, clip in enumerate(youtube_clips):
                     offsets = expand_clip_to_offsets(clip)
                     if not offsets:
                         logger.warning("YouTube clip %r has no modulation passes; skipping.", clip.name)
@@ -276,13 +274,11 @@ def generate_practice_track(
                     )
 
             elif section == "audio_clips":
-                # Front-load audio clip demos (no starting-key triad).
                 for i, clip in enumerate(audio_clips):
                     if clip.demo:
                         demo_path = _demo_cache_path(clip.name, None, recordings_dir)
                         full_sequence.append({"type": "audio", "path": demo_path})
                         full_sequence.append({"type": "silence", "ms": 1500})
-                for i, clip in enumerate(audio_clips):
                     offsets = expand_audio_clip_to_offsets(clip)
                     if not offsets:
                         logger.warning("Audio clip %r has no modulation passes; skipping.", clip.name)
