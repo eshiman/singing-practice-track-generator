@@ -7,6 +7,7 @@ import argparse
 import hashlib
 import logging
 import os
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -37,6 +38,13 @@ def _feedback_recordings_map(
                 digest = hashlib.sha256(fb.text.encode()).hexdigest()[:16]
                 result[fb.text] = recordings_dir / f"{digest}.wav"
     return result
+
+
+def _demo_cache_path(name: str, key: str | None, recordings_dir: Path) -> Path:
+    """Return the deterministic cache path for a demo recording."""
+    slug = re.sub(r'[^a-z0-9]+', '_', name.lower()).strip('_')
+    filename = f"demo__{slug}__{key}.wav" if key is not None else f"demo__{slug}.wav"
+    return recordings_dir / filename
 
 
 def _build_sequence(
@@ -192,6 +200,37 @@ def generate_practice_track(
         for text, path in unrecorded:
             record_feedback_clip(text, path)
 
+    # Front-load: record any demo lines before track generation begins.
+    # Demos are cached by name+key so re-runs skip already-recorded demos.
+    demo_recordings: list[tuple[str, str | None, Path]] = []
+    for section in session.item_order:
+        if section == "exercises":
+            for exercise in exercises:
+                if exercise.demo:
+                    key = exercise.modulation_waypoints[0] if exercise.modulation_waypoints else None
+                    demo_recordings.append((exercise.name, key, _demo_cache_path(exercise.name, key, recordings_dir)))
+        elif section == "youtube_clips":
+            for clip in youtube_clips:
+                if clip.demo:
+                    demo_recordings.append((clip.name, None, _demo_cache_path(clip.name, None, recordings_dir)))
+        elif section == "audio_clips":
+            for clip in audio_clips:
+                if clip.demo:
+                    demo_recordings.append((clip.name, None, _demo_cache_path(clip.name, None, recordings_dir)))
+
+    cached_demos = [(n, k, p) for n, k, p in demo_recordings if p.exists()]
+    unrecorded_demos = [(n, k, p) for n, k, p in demo_recordings if not p.exists()]
+    if cached_demos:
+        print(f"\nSkipping {len(cached_demos)} cached demo recording(s).", flush=True)
+    if unrecorded_demos:
+        print(
+            f"\nRecording {len(unrecorded_demos)} demo(s) in your voice before track generation.",
+            flush=True,
+        )
+        print("Recordings are cached — you will not be re-prompted for the same demo.\n", flush=True)
+        for name, key, path in unrecorded_demos:
+            record_demo(name, path, sample_rate, first_modulation_waypoint=key)
+
     # Build one combined sequence: [ex1 modulations..., silence, ex2 modulations..., silence, ...]
     # For exercises with demo=True, record a voice demo first and prepend it (with a short silence).
     # Use a temp dir for all clip WAVs (demos + rendered segments) until we finish rendering.
@@ -205,14 +244,8 @@ def generate_practice_track(
             if section == "exercises":
                 for i, exercise in enumerate(exercises):
                     if exercise.demo:
-                        demo_path = clip_dir / f"demo_ex_{i}.wav"
                         first_waypoint = exercise.modulation_waypoints[0] if exercise.modulation_waypoints else None
-                        record_demo(
-                            exercise.name,
-                            demo_path,
-                            sample_rate,
-                            first_modulation_waypoint=first_waypoint,
-                        )
+                        demo_path = _demo_cache_path(exercise.name, first_waypoint, recordings_dir)
                         full_sequence.append({"type": "audio", "path": demo_path})
                         full_sequence.append({"type": "silence", "ms": 1500})
                     seq = _exercise_to_sequence(exercise, feedback_recordings, tts_db)
@@ -227,8 +260,7 @@ def generate_practice_track(
                 # Front-load YouTube clip demos (no starting-key triad).
                 for i, clip in enumerate(youtube_clips):
                     if clip.demo:
-                        demo_path = clip_dir / f"demo_yt_{i}.wav"
-                        record_demo(clip.name, demo_path, sample_rate, first_modulation_waypoint=None)
+                        demo_path = _demo_cache_path(clip.name, None, recordings_dir)
                         full_sequence.append({"type": "audio", "path": demo_path})
                         full_sequence.append({"type": "silence", "ms": 1500})
                 for i, clip in enumerate(youtube_clips):
@@ -247,8 +279,7 @@ def generate_practice_track(
                 # Front-load audio clip demos (no starting-key triad).
                 for i, clip in enumerate(audio_clips):
                     if clip.demo:
-                        demo_path = clip_dir / f"demo_ac_{i}.wav"
-                        record_demo(clip.name, demo_path, sample_rate, first_modulation_waypoint=None)
+                        demo_path = _demo_cache_path(clip.name, None, recordings_dir)
                         full_sequence.append({"type": "audio", "path": demo_path})
                         full_sequence.append({"type": "silence", "ms": 1500})
                 for i, clip in enumerate(audio_clips):
