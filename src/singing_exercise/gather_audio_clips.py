@@ -77,6 +77,9 @@ def gather_audio_clips(
                 seg = seg.set_frame_rate(sample_rate)
             if seg.channels != 1:
                 seg = seg.set_channels(1)
+            normalize_to = item.get("normalize_to_dbfs")
+            if normalize_to is not None and seg.dBFS > -40:
+                seg = seg.apply_gain(normalize_to - seg.dBFS)
             out_path = clip_dir / f"audio_{i}.wav"
             seg.export(str(out_path), format="wav")
             ordered.append(out_path)

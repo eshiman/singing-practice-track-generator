@@ -81,10 +81,10 @@ class RepeatedModulationsTests(unittest.TestCase):
         modulations = expand_exercise_to_modulations(exercise)
         feedback = feedback_after_modulation(modulations, exercise.feedback)
         self.assertEqual([m["key_name"] for m in modulations], ["C4", "Db4", "Db4", "Db4", "D4", "Db4", "C4"])
-        self.assertEqual(feedback[1], ["first"])
+        self.assertEqual([e.text for e in feedback[1]], ["first"])
         self.assertEqual(feedback[2], [])
         self.assertEqual(feedback[3], [])
-        self.assertEqual(feedback[5], ["second"])
+        self.assertEqual([e.text for e in feedback[5]], ["second"])
 
     def test_invalid_repeat_configs_raise(self) -> None:
         with self.assertRaises(ValueError):

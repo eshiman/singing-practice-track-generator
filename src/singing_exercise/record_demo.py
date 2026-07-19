@@ -114,36 +114,13 @@ def _play_major_triad_cue(
         p.terminate()
 
 
-def record_demo(
-    exercise_name: str,
-    output_path: Path,
-    sample_rate: int = RATE,
-    first_modulation_waypoint: str | None = None,
-) -> Path:
+def _record_wav(output_path: Path) -> None:
     """
-    Prompt the user to press Enter when ready, then record from the default microphone until they press Enter again,
-    and save as WAV at output_path. Returns output_path.
-
-    Uses PyAudio. Trims leading/trailing silence and pads with 0.5 s silence; only scales down if clipping.
+    Core recording: waits for Enter to start (caller must already have prompted), records
+    until Enter, trims/normalizes, and writes WAV at output_path (always 44100 Hz mono).
     """
-    if sample_rate != RATE:
-        raise ValueError(f"record_demo expects sample_rate={RATE}, got {sample_rate}")
     output_path = Path(output_path).resolve()
     output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    if first_modulation_waypoint:
-        print(f'Playing starting-key triad cue: {first_modulation_waypoint}', flush=True)
-        try:
-            _play_major_triad_cue(first_modulation_waypoint, sample_rate=sample_rate)
-        except Exception:
-            logger.exception("Failed to play starting-key triad cue; continuing.")
-
-    print(f'Record a demo for "{exercise_name}". Press Enter when ready to start.', flush=True)
-    sys.stdout.flush()
-    try:
-        input()
-    except (EOFError, KeyboardInterrupt):
-        pass
 
     stop_event = threading.Event()
     chunks: list[bytes] = []
@@ -174,10 +151,8 @@ def record_demo(
     thread.start()
     time.sleep(0.4)
 
-    msg = "Recording... Press Enter when done."
-    print(msg, flush=True)
+    print("Recording... Press Enter when done.", flush=True)
     sys.stdout.flush()
-
     try:
         input()
     except (EOFError, KeyboardInterrupt):
@@ -208,5 +183,57 @@ def record_demo(
         wf.setframerate(RATE)
         wf.writeframes(data)
 
+
+def record_demo(
+    exercise_name: str,
+    output_path: Path,
+    sample_rate: int = RATE,
+    first_modulation_waypoint: str | None = None,
+) -> Path:
+    """
+    Prompt the user to press Enter when ready, then record from the default microphone until they press Enter again,
+    and save as WAV at output_path. Returns output_path.
+
+    Uses PyAudio. Trims leading/trailing silence and pads with 0.5 s silence; only scales down if clipping.
+    """
+    if sample_rate != RATE:
+        raise ValueError(f"record_demo expects sample_rate={RATE}, got {sample_rate}")
+    output_path = Path(output_path).resolve()
+
+    if first_modulation_waypoint:
+        print(f'Playing starting-key triad cue: {first_modulation_waypoint}', flush=True)
+        try:
+            _play_major_triad_cue(first_modulation_waypoint, sample_rate=sample_rate)
+        except Exception:
+            logger.exception("Failed to play starting-key triad cue; continuing.")
+
+    print(f'Record a demo for "{exercise_name}". Press Enter when ready to start.', flush=True)
+    sys.stdout.flush()
+    try:
+        input()
+    except (EOFError, KeyboardInterrupt):
+        pass
+
+    _record_wav(output_path)
     logger.info("Saved demo to %s", output_path)
+    return output_path
+
+
+def record_feedback_clip(text: str, output_path: Path) -> Path:
+    """
+    Prompt the user to record a feedback line in their own voice.
+    Displays the text to say, then records using the same press-Enter-to-start/stop flow.
+    Saves as WAV at output_path (44100 Hz mono). Returns output_path.
+    """
+    output_path = Path(output_path).resolve()
+    print(f'\nSay: "{text}"', flush=True)
+    print("Press Enter when ready to start recording.", flush=True)
+    sys.stdout.flush()
+    try:
+        input()
+    except (EOFError, KeyboardInterrupt):
+        pass
+
+    _record_wav(output_path)
+    logger.info("Saved feedback recording to %s", output_path)
     return output_path

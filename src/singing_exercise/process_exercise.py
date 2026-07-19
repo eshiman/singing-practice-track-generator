@@ -73,20 +73,22 @@ def expand_exercise_to_modulations(exercise: RawExercise):
 def feedback_after_modulation(
     modulations: list[dict],
     feedback_list: list[FeedbackEntry],
-) -> list[list[str]]:
+) -> list[list[FeedbackEntry]]:
     """
-    For each modulation index i, return the list of feedback texts to speak after that
+    For each modulation index i, return the FeedbackEntry objects triggered after that
     modulation (after the pause). Placement: after the Nth occurrence of the given key.
-    Returns list of length len(modulations); each element is a list of text strings (may be empty).
+    Returns list of length len(modulations); each element is a list of entries (may be empty).
     """
-    result: list[list[str]] = [[] for _ in modulations]
-    # Count occurrences of each key as we walk modulations (repeat copies count too)
+    result: list[list[FeedbackEntry]] = [[] for _ in modulations]
+    # Only original passes (not repeat copies) count toward occurrence tracking and trigger feedback.
     occurrence: dict[str, int] = {}
     for i, mod in enumerate(modulations):
         key_name = mod["key_name"]
-        occurrence[key_name] = occurrence.get(key_name, 0) + 1
+        is_repeat = mod.get("is_repeat_copy", False)
+        if not is_repeat:
+            occurrence[key_name] = occurrence.get(key_name, 0) + 1
         for fb in feedback_list:
-            if fb.key == key_name and fb.which_occurrence == occurrence[key_name]:
+            if not is_repeat and fb.key == key_name and fb.which_occurrence == occurrence[key_name]:
                 if fb.text:
-                    result[i].append(fb.text)
+                    result[i].append(fb)
     return result

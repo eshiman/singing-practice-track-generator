@@ -16,6 +16,7 @@ class FeedbackEntry:
     key: str
     which_occurrence: int
     text: str
+    generated: bool = True  # False → use a recorded voice clip instead of TTS
 
 
 @dataclass
@@ -107,6 +108,7 @@ class RawExercise:
                 key=normalized_key,
                 which_occurrence=int(entry.get("which_occurrence", 1)),
                 text=(entry.get("text") or "").strip(),
+                generated=bool(entry.get("generated", True)),
             ))
         repeated_modulations_raw = data.get("repeated_modulations") or []
         repeated_modulations: list[RepeatedModulationRule] = []

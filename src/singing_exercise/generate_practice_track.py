@@ -4,6 +4,7 @@ Phase 3: optional spoken feedback (TTS) at key/occurrence positions.
 Requires: mido, pydub, fluidsynth CLI, and a piano soundfont (.sf2).
 """
 import argparse
+import hashlib
 import logging
 import os
 import sys
@@ -18,29 +19,61 @@ from .raw_exercise import RawExercise
 from .process_exercise import expand_exercise_to_modulations, feedback_after_modulation
 from .process_audio_clip import expand_audio_clip_to_offsets
 from .process_youtube_clip import expand_clip_to_offsets
-from .record_demo import record_demo
+from .record_demo import record_demo, record_feedback_clip
 from .session import load_session_from_yaml_path
 
 logger = logging.getLogger(__name__)
 
 
-def _build_sequence(exercise: RawExercise, modulations: list, modulations_midi: list) -> list:
+def _feedback_recordings_map(
+    exercises: list[RawExercise],
+    recordings_dir: Path,
+) -> dict[str, Path]:
+    """Return mapping of feedback text → cache path for all generated=False entries (deduplicated)."""
+    result: dict[str, Path] = {}
+    for exercise in exercises:
+        for fb in exercise.feedback:
+            if not fb.generated and fb.text and fb.text not in result:
+                digest = hashlib.sha256(fb.text.encode()).hexdigest()[:16]
+                result[fb.text] = recordings_dir / f"{digest}.wav"
+    return result
+
+
+def _build_sequence(
+    exercise: RawExercise,
+    modulations: list,
+    modulations_midi: list,
+    feedback_recordings: dict[str, Path],
+    tts_db: float,
+) -> list:
     """
-    Build ordered list of segment descriptors: TTS (feedback) before each key, then piano, then silence.
+    Build ordered list of segment descriptors: feedback (TTS or recorded audio) before each key,
+    then piano, then silence.
     """
     feedback_by_modulation = feedback_after_modulation(modulations, exercise.feedback)
     sequence = []
     for i, midi_bytes in enumerate(modulations_midi):
-        for text in feedback_by_modulation[i]:
-            sequence.append({"type": "tts", "text": text})
+        for entry in feedback_by_modulation[i]:
+            if not entry.generated and entry.text in feedback_recordings:
+                sequence.append({
+                    "type": "audio",
+                    "path": feedback_recordings[entry.text],
+                    "normalize_to_dbfs": tts_db,
+                })
+            else:
+                sequence.append({"type": "tts", "text": entry.text})
         sequence.append({"type": "piano", "midi": midi_bytes})
         if i < len(modulations_midi) - 1:
             sequence.append({"type": "silence", "ms": exercise.pause_between_keys_ms})
     return sequence
 
 
-def _exercise_to_sequence(exercise: RawExercise) -> list:
-    """Build the full sequence (piano + pauses + optional TTS) for one exercise."""
+def _exercise_to_sequence(
+    exercise: RawExercise,
+    feedback_recordings: dict[str, Path],
+    tts_db: float,
+) -> list:
+    """Build the full sequence (piano + pauses + optional TTS/recorded feedback) for one exercise."""
     modulations = expand_exercise_to_modulations(exercise)
     if not modulations:
         return []
@@ -53,7 +86,7 @@ def _exercise_to_sequence(exercise: RawExercise) -> list:
         )
         for mod in modulations
     ]
-    return _build_sequence(exercise, modulations, modulations_midi)
+    return _build_sequence(exercise, modulations, modulations_midi, feedback_recordings, tts_db)
 
 
 def _youtube_clip_to_sequence(
@@ -144,6 +177,21 @@ def generate_practice_track(
     if exercises and (soundfont_path is None or not soundfont_path.exists()):
         raise ValueError("A soundfont is required when the session includes exercises.")
 
+    # Front-load: record any feedback lines marked generated=False before track generation begins.
+    # Recordings are cached by text hash so re-runs don't re-prompt for already-recorded lines.
+    recordings_dir = repo_root / "recordings"
+    recordings_dir.mkdir(parents=True, exist_ok=True)
+    feedback_recordings = _feedback_recordings_map(exercises, recordings_dir)
+    unrecorded = [(text, path) for text, path in feedback_recordings.items() if not path.exists()]
+    if unrecorded:
+        print(
+            f"\nRecording {len(unrecorded)} feedback line(s) in your voice before track generation.",
+            flush=True,
+        )
+        print("Recordings are cached — you will not be re-prompted for the same text.\n", flush=True)
+        for text, path in unrecorded:
+            record_feedback_clip(text, path)
+
     # Build one combined sequence: [ex1 modulations..., silence, ex2 modulations..., silence, ...]
     # For exercises with demo=True, record a voice demo first and prepend it (with a short silence).
     # Use a temp dir for all clip WAVs (demos + rendered segments) until we finish rendering.
@@ -167,7 +215,7 @@ def generate_practice_track(
                         )
                         full_sequence.append({"type": "audio", "path": demo_path})
                         full_sequence.append({"type": "silence", "ms": 1500})
-                    seq = _exercise_to_sequence(exercise)
+                    seq = _exercise_to_sequence(exercise, feedback_recordings, tts_db)
                     if not seq:
                         logger.warning("Exercise %r has no modulations; skipping.", exercise.name)
                         continue

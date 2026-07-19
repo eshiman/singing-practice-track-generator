@@ -67,7 +67,9 @@ exercises:
     pause_between_keys_ms: 2000
     # If true, prompts you to record a voice demo before this exercise; demo is inserted in the track
     demo: true
-    # Spoken (TTS) feedback after a specific key/occurrence in the modulation sequence
+    # Spoken feedback after a specific key/occurrence in the modulation sequence.
+    # By default (generated: true), lines are synthesized with TTS.
+    # Set generated: false to use a recording of your own voice instead.
     feedback:
       - key: "Ab3"
         which_occurrence: 1   # after the 1st time we play in Ab3
@@ -75,6 +77,7 @@ exercises:
       - key: "E4"
         which_occurrence: 1
         text: "Open the mouth more as you reach the top."
+        generated: false      # record your voice for this line
 
   # --- Exercise 2: simple scale run, uniform 8th notes ---
   - name: "Scale 1-8-1"
@@ -99,6 +102,22 @@ Fields:
 
 If a modulation is repeated, spoken feedback is only evaluated on original (non-repeat-copy) modulations.
 Repeat copies never trigger feedback.
+
+### Recording your own voice for feedback lines
+
+Set `generated: false` on any feedback entry to use a recording of your voice instead of TTS:
+
+```yaml
+feedback:
+  - key: "C4"
+    which_occurrence: 1
+    text: "Keep the jaw relaxed."
+    generated: false
+```
+
+When you run generation, **all** `generated: false` lines across every exercise are prompted for recording in a single batch **before** any audio is rendered. The text is printed so you know what to say. Once all recordings are captured, the rest of generation runs unattended.
+
+Recordings are cached in `recordings/<hash>.wav` (keyed by the exact feedback text). Re-running generation does not re-prompt for lines you have already recorded. Editing a line's `text` counts as a new line and triggers a new recording.
 
 ```yaml
 exercises:
